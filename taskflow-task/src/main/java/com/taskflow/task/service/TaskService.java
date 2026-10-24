@@ -11,15 +11,14 @@ import feign.RetryableException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
+import lombok.Data;
 
 @Service
+@RequiredArgsConstructor
 public class TaskService {
 
     private final UserClient userClient;
-
-    public TaskService(UserClient userClient) {
-        this.userClient = userClient;
-    }
+    private final TaskMapper taskMapper;
 
     public String validateUserAndTask(
             Long userId, String taskName) {
