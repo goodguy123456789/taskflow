@@ -4,25 +4,18 @@ package com.taskflow.task.client;
 import com.taskflow.common.result.ApiResponse;
 import com.taskflow.task.dto.UserInfo;
 
-import org.springframework.core.ParameterizedTypeReference;
-import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestClient;
+import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 
-@Component
-public class UserClient {
+@FeignClient(
+        name = "taskflow-user",
+        url = "${taskflow.user-service.url}"
+)
+public interface UserClient {
 
-    private final RestClient userRestClient;
-
-    public UserClient(RestClient userRestClient) {
-        this.userRestClient = userRestClient;
-    }
-
-    public ApiResponse<UserInfo> getUser(Long userId) {
-
-        return userRestClient.get()
-                .uri("/api/users/{id}", userId)
-                .retrieve()
-                .body(new ParameterizedTypeReference<
-                        ApiResponse<UserInfo>>() {});
-    }
+    @GetMapping("/api/users/{id}")
+    ApiResponse<UserInfo> getUser(
+            @PathVariable("id") Long userId
+    );
 }

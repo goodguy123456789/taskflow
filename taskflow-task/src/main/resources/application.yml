@@ -1,6 +1,18 @@
+
 server:
   port: 8082
 
 spring:
   application:
     name: taskflow-task
+  cloud:
+    openfeign:
+      client:
+        config:
+          taskflow-user:
+            connectTimeout: 2000
+            readTimeout: 3000
+
+taskflow:
+  user-service:
+    url: http://localhost:8081
