@@ -1,68 +1,80 @@
 package com.taskflow.task;
 
-import com.taskflow.task.client.UserClient;
-import com.taskflow.task.controller.TaskController;
-import com.taskflow.task.exception.GlobalExceptionHandler;
-import com.taskflow.task.service.TaskService;
-import java.net.ConnectException;
+import com.sun.net.httpserver.HttpServer;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import org.springframework.web.client.RestClient;
+import org.springframework.http.MediaType;
 
-import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
-import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
-import static org.springframework.test.web.client.response.MockRestResponseCreators.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+@SpringBootTest
+@AutoConfigureMockMvc
 class TaskApiTest {
-    private MockRestServiceServer users;
+    private static final ExecutorService EXECUTOR = Executors.newCachedThreadPool();
+    private static final AtomicReference<Reply> REPLY = new AtomicReference<>();
+    private static final AtomicReference<String> REQUEST_PATH = new AtomicReference<>();
+    private static final HttpServer USERS = startUsers();
+
+    @Autowired
     private MockMvc api;
+
+    @DynamicPropertySource
+    static void userServiceUrl(DynamicPropertyRegistry properties) {
+        properties.add("taskflow.user-service.url",
+                () -> "http://127.0.0.1:" + USERS.getAddress().getPort());
+    }
 
     @BeforeEach
     void setUp() {
-        RestClient.Builder builder = RestClient.builder().baseUrl("http://user-service");
-        users = MockRestServiceServer.bindTo(builder).build();
-        TaskService service = new TaskService(new UserClient(builder.build()));
-        api = MockMvcBuilders.standaloneSetup(new TaskController(service))
-                .setControllerAdvice(new GlobalExceptionHandler()).build();
+        REQUEST_PATH.set(null);
+        REPLY.set(new Reply(200,
+                "{\"code\":200,\"message\":\"success\",\"data\":{\"id\":1,\"username\":\"test-user\"}}", 0));
+    }
+
+    @AfterAll
+    static void stopUsers() {
+        USERS.stop(0);
+        EXECUTOR.shutdownNow();
     }
 
     @Test
-    void validatesExistingUserThroughClientAndService() throws Exception {
-        users.expect(requestTo("http://user-service/api/users/1"))
-                .andExpect(method(HttpMethod.GET))
-                .andRespond(withSuccess(
-                        "{\"code\":200,\"message\":\"success\",\"data\":{\"id\":1,\"username\":\"test-user\"}}",
-                        MediaType.APPLICATION_JSON));
+    void validatesExistingUserThroughRealFeignClient() throws Exception {
         api.perform(post("/api/tasks/validate-user").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"userId\":1,\"name\":\"demo\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data").value("User verified: test-user, task: demo"));
-        users.verify();
+        assertEquals("GET /api/users/1", REQUEST_PATH.get());
     }
 
     @Test
     void preservesNotFoundStatusAndJsonBody() throws Exception {
-        users.expect(requestTo("http://user-service/api/users/999"))
-                .andRespond(withStatus(HttpStatus.NOT_FOUND).contentType(MediaType.APPLICATION_JSON)
-                        .body("{\"code\":404,\"message\":\"User not found\",\"data\":null}"));
+        REPLY.set(new Reply(404, "{\"code\":404,\"message\":\"User not found\",\"data\":null}", 0));
         api.perform(post("/api/tasks/validate-user").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"userId\":999,\"name\":\"demo\"}"))
                 .andExpect(status().isNotFound())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.code").value(404))
                 .andExpect(jsonPath("$.message").value("User not found"));
-        users.verify();
+        assertEquals("GET /api/users/999", REQUEST_PATH.get());
     }
 
     @ParameterizedTest
@@ -77,7 +89,7 @@ class TaskApiTest {
         api.perform(post("/api/tasks/validate-user").contentType(MediaType.APPLICATION_JSON).content(request))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(400));
-        users.verify();
+        assertNull(REQUEST_PATH.get());
     }
 
     @ParameterizedTest
@@ -88,7 +100,7 @@ class TaskApiTest {
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.code").value(400))
                 .andExpect(jsonPath("$.message").isNotEmpty());
-        users.verify();
+        assertNull(REQUEST_PATH.get());
     }
 
     @ParameterizedTest
@@ -99,33 +111,63 @@ class TaskApiTest {
             "not-json"
     })
     void invalidUserResponseBecomesBadGateway(String response) throws Exception {
-        users.expect(requestTo("http://user-service/api/users/1"))
-                .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
+        REPLY.set(new Reply(200, response, 0));
         api.perform(post("/api/tasks/validate-user").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"userId\":1,\"name\":\"demo\"}"))
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.code").value(502));
-        users.verify();
     }
 
     @Test
     void upstreamServerFailureBecomesBadGateway() throws Exception {
-        users.expect(requestTo("http://user-service/api/users/1")).andRespond(withServerError());
+        REPLY.set(new Reply(500, "{\"code\":500,\"message\":\"failure\",\"data\":null}", 0));
         api.perform(post("/api/tasks/validate-user").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"userId\":1,\"name\":\"demo\"}"))
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.code").value(502));
-        users.verify();
     }
 
     @Test
-    void unreachableUserServiceBecomesServiceUnavailable() throws Exception {
-        users.expect(requestTo("http://user-service/api/users/1"))
-                .andRespond(withException(new ConnectException("Connection refused")));
+    void configuredReadTimeoutBecomesServiceUnavailable() throws Exception {
+        REPLY.set(new Reply(200, "{\"code\":200,\"message\":\"success\",\"data\":null}", 4500));
         api.perform(post("/api/tasks/validate-user").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"userId\":1,\"name\":\"demo\"}"))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.code").value(503));
-        users.verify();
     }
+
+    private static HttpServer startUsers() {
+        try {
+            HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            server.setExecutor(EXECUTOR);
+            server.createContext("/api/users", exchange -> {
+                REQUEST_PATH.set(exchange.getRequestMethod() + " " + exchange.getRequestURI().getPath());
+                Reply reply = REPLY.get();
+                try {
+                    if (reply.delayMillis() > 0) {
+                        Thread.sleep(reply.delayMillis());
+                    }
+                    byte[] body = reply.body().getBytes(StandardCharsets.UTF_8);
+                    exchange.getResponseHeaders().set("Content-Type", "application/json");
+                    exchange.sendResponseHeaders(reply.status(), body.length == 0 ? -1 : body.length);
+                    if (body.length > 0) {
+                        exchange.getResponseBody().write(body);
+                    }
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                } catch (IOException ex) {
+                    // A timed-out Feign request can close the connection before the delayed reply.
+                } finally {
+                    exchange.close();
+                }
+            });
+            server.start();
+            return server;
+        } catch (IOException ex) {
+            EXECUTOR.shutdownNow();
+            throw new ExceptionInInitializerError(ex);
+        }
+    }
+
+    private record Reply(int status, String body, long delayMillis) {}
 }
