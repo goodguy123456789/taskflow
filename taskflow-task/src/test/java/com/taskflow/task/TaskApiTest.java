@@ -3,6 +3,7 @@ package com.taskflow.task;
 import com.sun.net.httpserver.HttpServer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Map;
+import java.util.UUID;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -22,7 +23,6 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.test.web.servlet.MvcResult;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -39,10 +39,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.datasource.password=",
         "spring.sql.init.mode=always",
         "spring.sql.init.schema-locations=classpath:schema-test.sql",
-        "mybatis.mapper-locations=classpath:mapper/*.xml"
+        "mybatis.mapper-locations=classpath:mapper/*.xml",
+        "mybatis.configuration.map-underscore-to-camel-case=true"
 })
 @AutoConfigureMockMvc
-@Transactional
 class TaskApiTest {
     private static final ExecutorService EXECUTOR = Executors.newCachedThreadPool();
     private static final AtomicReference<Reply> REPLY = new AtomicReference<>();
@@ -63,6 +63,7 @@ class TaskApiTest {
 
     @BeforeEach
     void setUp() {
+        jdbc.update("DELETE FROM task_definition");
         REQUEST_PATH.set(null);
         REPLY.set(new Reply(200,
                 "{\"code\":200,\"message\":\"success\",\"data\":{\"id\":1,\"username\":\"test-user\"}}", 0));
@@ -75,34 +76,61 @@ class TaskApiTest {
     }
 
     @Test
-    void createsTaskAndReadsBackUnifiedFieldsAndDefaults() throws Exception {
-        MvcResult created = api.perform(post("/api/tasks").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"userId\":1,\"name\":\"demo\"}"))
+    void repeatedKeyReturnsSameTaskAndOnlyOneRow() throws Exception {
+        String body = validRequest();
+        MvcResult first = api.perform(post("/api/tasks").contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.code").value(200))
-                .andExpect(jsonPath("$.data").isNumber())
+                .andExpect(jsonPath("$.data.created").value(true))
                 .andReturn();
-        long id = new ObjectMapper().readTree(created.getResponse().getContentAsString())
-                .get("data").asLong();
+        long id = new ObjectMapper().readTree(first.getResponse().getContentAsString())
+                .at("/data/taskId").asLong();
         assertTrue(id > 0);
         assertEquals("GET /api/users/1", REQUEST_PATH.get());
 
+        api.perform(post("/api/tasks").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.taskId").value(id))
+                .andExpect(jsonPath("$.data.created").value(false));
+
         api.perform(get("/api/tasks/{id}", id))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.id").value(id))
                 .andExpect(jsonPath("$.data.userId").value(1))
-                .andExpect(jsonPath("$.data.ownerUserId").doesNotExist())
-                .andExpect(jsonPath("$.data.name").value("demo"))
-                .andExpect(jsonPath("$.data.handlerType").value("HTTP"))
+                .andExpect(jsonPath("$.data.name").value("Daily Report"))
+                .andExpect(jsonPath("$.data.handlerType").value("DEMO"))
                 .andExpect(jsonPath("$.data.triggerType").value("ONCE"))
-                .andExpect(jsonPath("$.data.status").value("ENABLED"));
-
+                .andExpect(jsonPath("$.data.timezone").value("Asia/Singapore"))
+                .andExpect(jsonPath("$.data.maxRetries").value(3));
+        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM task_definition", Integer.class));
         Map<String, Object> saved = jdbc.queryForMap(
-                "SELECT user_id, handler_type, trigger_type, status FROM task_definition WHERE id = ?", id);
+                "SELECT user_id, handler_type, trigger_type, idempotency_key FROM task_definition WHERE id = ?", id);
         assertEquals(1L, ((Number) saved.get("user_id")).longValue());
-        assertEquals("HTTP", saved.get("handler_type"));
+        assertEquals("DEMO", saved.get("handler_type"));
         assertEquals("ONCE", saved.get("trigger_type"));
-        assertEquals("ENABLED", saved.get("status"));
+        assertEquals(new ObjectMapper().readTree(body).get("idempotencyKey").asText(), saved.get("idempotency_key"));
+    }
+
+    @Test
+    void sameKeyWithChangedRequestReturnsConflict() throws Exception {
+        String body = validRequest();
+        api.perform(post("/api/tasks").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated());
+        String changed = body.replace("Daily Report", "Different task");
+        api.perform(post("/api/tasks").contentType(MediaType.APPLICATION_JSON).content(changed))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(409));
+        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM task_definition", Integer.class));
+    }
+
+    @Test
+    void differentKeysCreateDifferentTasks() throws Exception {
+        api.perform(post("/api/tasks").contentType(MediaType.APPLICATION_JSON).content(validRequest()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.created").value(true));
+        api.perform(post("/api/tasks").contentType(MediaType.APPLICATION_JSON).content(validRequest()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.created").value(true));
+        assertEquals(2, jdbc.queryForObject("SELECT COUNT(*) FROM task_definition", Integer.class));
     }
 
     @Test
@@ -124,7 +152,7 @@ class TaskApiTest {
     void preservesNotFoundStatusAndJsonBody() throws Exception {
         REPLY.set(new Reply(404, "{\"code\":404,\"message\":\"User not found\",\"data\":null}", 0));
         api.perform(post("/api/tasks").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"userId\":999,\"name\":\"demo\"}"))
+                        .content(validRequest(999)))
                 .andExpect(status().isNotFound())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.code").value(404))
@@ -168,7 +196,7 @@ class TaskApiTest {
     void invalidUserResponseBecomesBadGateway(String response) throws Exception {
         REPLY.set(new Reply(200, response, 0));
         api.perform(post("/api/tasks").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"userId\":1,\"name\":\"demo\"}"))
+                        .content(validRequest()))
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.code").value(502));
     }
@@ -177,7 +205,7 @@ class TaskApiTest {
     void upstreamServerFailureBecomesBadGateway() throws Exception {
         REPLY.set(new Reply(500, "{\"code\":500,\"message\":\"failure\",\"data\":null}", 0));
         api.perform(post("/api/tasks").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"userId\":1,\"name\":\"demo\"}"))
+                        .content(validRequest()))
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.code").value(502));
     }
@@ -186,9 +214,22 @@ class TaskApiTest {
     void configuredReadTimeoutBecomesServiceUnavailable() throws Exception {
         REPLY.set(new Reply(200, "{\"code\":200,\"message\":\"success\",\"data\":null}", 4500));
         api.perform(post("/api/tasks").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"userId\":1,\"name\":\"demo\"}"))
+                        .content(validRequest()))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.code").value(503));
+    }
+
+    private String validRequest() {
+        return validRequest(1);
+    }
+
+    private String validRequest(long userId) {
+        // The complete JSON-object payload is exercised against real MySQL in the local HTTP test.
+        return "{\"userId\":" + userId
+                + ",\"name\":\"Daily Report\",\"description\":\"Test task\""
+                + ",\"handlerType\":\"DEMO\",\"triggerType\":\"ONCE\""
+                + ",\"timezone\":\"Asia/Singapore\",\"nextTriggerAt\":\"2026-10-26T09:00:00\""
+                + ",\"maxRetries\":3,\"idempotencyKey\":\"" + UUID.randomUUID() + "\"}";
     }
 
     private static HttpServer startUsers() {

@@ -10,6 +10,8 @@ CREATE TABLE task_definition (
     next_trigger_at TIMESTAMP(3),
     payload JSON,
     max_retries INT NOT NULL DEFAULT 3,
+    idempotency_key VARCHAR(36),
+    CONSTRAINT uk_user_idempotency UNIQUE (user_id, idempotency_key),
     status VARCHAR(20) NOT NULL DEFAULT 'ENABLED',
     created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
