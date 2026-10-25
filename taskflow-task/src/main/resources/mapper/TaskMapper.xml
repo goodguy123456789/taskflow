@@ -1,10 +1,18 @@
-
-<?xml version="1.0" encoding="UTF-8" ?>
+<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper
     PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 
 <mapper namespace="com.taskflow.task.mapper.TaskMapper">
+
+    <resultMap id="taskDefinition" type="com.taskflow.task.entity.TaskDefinition">
+        <id column="id" property="id"/>
+        <result column="user_id" property="userId"/>
+        <result column="name" property="name"/>
+        <result column="handler_type" property="handlerType"/>
+        <result column="trigger_type" property="triggerType"/>
+        <result column="status" property="status"/>
+    </resultMap>
 
     <insert id="insert"
             parameterType="com.taskflow.task.entity.TaskDefinition"
@@ -12,19 +20,20 @@
             keyProperty="id">
 
         INSERT INTO task_definition
-            (owner_user_id, name, status)
+            (user_id, name, handler_type, trigger_type, status)
         VALUES
-            (#{ownerUserId}, #{name}, #{status})
+            (#{userId}, #{name}, #{handlerType}, #{triggerType}, #{status})
 
     </insert>
 
-    <select id="findById"
-            resultType="com.taskflow.task.entity.TaskDefinition">
+    <select id="findById" resultMap="taskDefinition">
 
         SELECT
             id,
-            owner_user_id,
+            user_id,
             name,
+            handler_type,
+            trigger_type,
             status
         FROM task_definition
         WHERE id = #{id}

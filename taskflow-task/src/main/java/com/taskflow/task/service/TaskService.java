@@ -69,8 +69,10 @@ public class TaskService {
 
         // 3. 创建任务实体
         TaskDefinition task = new TaskDefinition();
-        task.setOwnerUserId(userId);
+        task.setUserId(userId);
         task.setName(taskName);
+        task.setHandlerType("HTTP");
+        task.setTriggerType("ONCE");
         task.setStatus("ENABLED");
 
         // 4. 执行数据库插入
