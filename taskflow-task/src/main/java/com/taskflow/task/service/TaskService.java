@@ -4,6 +4,7 @@ package com.taskflow.task.service;
 import com.taskflow.common.result.ApiResponse;
 import com.taskflow.task.client.UserClient;
 import com.taskflow.task.dto.UserInfo;
+import com.taskflow.task.mapper.TaskMapper;
 
 import feign.FeignException;
 import feign.RetryableException;
@@ -11,7 +12,7 @@ import feign.RetryableException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
-import lombok.Data;
+import lombok.RequiredArgsConstructor;
 
 @Service
 @RequiredArgsConstructor
