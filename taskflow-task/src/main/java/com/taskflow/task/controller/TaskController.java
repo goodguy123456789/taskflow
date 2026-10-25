@@ -19,20 +19,18 @@ public class TaskController {
 
     private final TaskService taskService;
 
-    @PostMapping
-    public ResponseEntity<ApiResponse<Long>> createTask(
-            @RequestBody CreateTaskRequest request) {
+ @PostMapping
+public ResponseEntity<ApiResponse<CreateTaskResult>> createTask(
+        @RequestBody CreateTaskRequest request) {
 
-        Long taskId = taskService.createTask(
-                request.userId(),
-                request.name()
-        );
+    CreateTaskResult result = taskService.createTask(request);
 
-        return ResponseEntity
-                .status(HttpStatus.CREATED)
-                .body(ApiResponse.success(taskId));
-    }
-
+    return ResponseEntity
+            .status(result.created()
+                    ? HttpStatus.CREATED
+                    : HttpStatus.OK)
+            .body(ApiResponse.success(result));
+}
     @GetMapping("/{id}")
     public ApiResponse<TaskDefinition> getTask(
             @PathVariable Long id) {

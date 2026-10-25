@@ -11,4 +11,9 @@ public interface TaskMapper {
     int insert(TaskDefinition task);
 
     TaskDefinition findById(@Param("id") Long id);
+
+    TaskDefinition findByUserAndIdempotencyKey(
+            @Param("userId") Long userId,
+            @Param("key") String key
+    );
 }

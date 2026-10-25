@@ -1,42 +1,80 @@
-<?xml version="1.0" encoding="UTF-8"?>
+
+<?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper
     PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 
 <mapper namespace="com.taskflow.task.mapper.TaskMapper">
 
-    <resultMap id="taskDefinition" type="com.taskflow.task.entity.TaskDefinition">
-        <id column="id" property="id"/>
-        <result column="user_id" property="userId"/>
-        <result column="name" property="name"/>
-        <result column="handler_type" property="handlerType"/>
-        <result column="trigger_type" property="triggerType"/>
-        <result column="status" property="status"/>
-    </resultMap>
-
     <insert id="insert"
-            parameterType="com.taskflow.task.entity.TaskDefinition"
             useGeneratedKeys="true"
             keyProperty="id">
 
-        INSERT INTO task_definition
-            (user_id, name, handler_type, trigger_type, status)
-        VALUES
-            (#{userId}, #{name}, #{handlerType}, #{triggerType}, #{status})
+        INSERT INTO task_definition (
+            user_id,
+            name,
+            description,
+            handler_type,
+            trigger_type,
+            cron_expression,
+            timezone,
+            next_trigger_at,
+            payload,
+            max_retries,
+            status,
+            idempotency_key
+        )
+        VALUES (
+            #{userId},
+            #{name},
+            #{description},
+            #{handlerType},
+            #{triggerType},
+            #{cronExpression},
+            #{timezone},
+            #{nextTriggerAt},
+            CAST(#{payload,jdbcType=VARCHAR} AS JSON),
+            #{maxRetries},
+            #{status},
+            #{idempotencyKey}
+        )
 
     </insert>
 
-    <select id="findById" resultMap="taskDefinition">
+    <sql id="taskColumns">
+        id,
+        user_id,
+        name,
+        description,
+        handler_type,
+        trigger_type,
+        cron_expression,
+        timezone,
+        next_trigger_at,
+        payload,
+        max_retries,
+        status,
+        idempotency_key,
+        created_at,
+        updated_at
+    </sql>
 
-        SELECT
-            id,
-            user_id,
-            name,
-            handler_type,
-            trigger_type,
-            status
+    <select id="findById"
+            resultType="com.taskflow.task.entity.TaskDefinition">
+
+        SELECT <include refid="taskColumns"/>
         FROM task_definition
         WHERE id = #{id}
+
+    </select>
+
+    <select id="findByUserAndIdempotencyKey"
+            resultType="com.taskflow.task.entity.TaskDefinition">
+
+        SELECT <include refid="taskColumns"/>
+        FROM task_definition
+        WHERE user_id = #{userId}
+          AND idempotency_key = #{key}
 
     </select>
 
