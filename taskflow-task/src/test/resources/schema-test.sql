@@ -16,3 +16,17 @@ CREATE TABLE task_definition (
     created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
 );
+CREATE TABLE task_outbox (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    event_id VARCHAR(64) NOT NULL UNIQUE,
+    aggregate_type VARCHAR(64) NOT NULL,
+    aggregate_id BIGINT NOT NULL,
+    event_type VARCHAR(64) NOT NULL,
+    payload JSON NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'NEW',
+    retry_count INT NOT NULL DEFAULT 0,
+    next_retry_at TIMESTAMP(3),
+    published_at TIMESTAMP(3),
+    created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
+);
