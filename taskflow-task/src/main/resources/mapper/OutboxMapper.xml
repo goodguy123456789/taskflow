@@ -1,3 +1,4 @@
+
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper
     PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
@@ -8,26 +9,91 @@
     <insert id="insert"
             useGeneratedKeys="true"
             keyProperty="id">
-
         INSERT INTO task_outbox (
             event_id,
             aggregate_type,
             aggregate_id,
             event_type,
-            payload,
-            status,
-            next_retry_at
+            payload
         )
         VALUES (
             #{eventId},
             #{aggregateType},
             #{aggregateId},
             #{eventType},
-            CAST(#{payload,jdbcType=VARCHAR} AS JSON),
-            #{status},
-            CURRENT_TIMESTAMP(3)
+            CAST(#{payload,jdbcType=VARCHAR} AS JSON)
         )
-
     </insert>
+
+    <select id="selectClaimable"
+            resultType="com.taskflow.task.entity.OutboxEvent">
+
+        SELECT *
+        FROM task_outbox
+        WHERE (
+            status = 'NEW'
+            AND (
+                next_retry_at IS NULL
+                OR next_retry_at <![CDATA[ <= ]]> NOW(3)
+            )
+        )
+        OR (
+            status = 'PUBLISHING'
+            AND locked_until <![CDATA[ <= ]]> NOW(3)
+        )
+        ORDER BY id
+        LIMIT #{limit}
+        FOR UPDATE SKIP LOCKED
+    </select>
+
+    <update id="claim">
+        UPDATE task_outbox
+        SET status = 'PUBLISHING',
+            claim_token = #{token},
+            locked_until = DATE_ADD(
+                NOW(3),
+                INTERVAL #{leaseSeconds} SECOND
+            )
+        WHERE id = #{id}
+          AND (
+              (
+                  status = 'NEW'
+                  AND (
+                      next_retry_at IS NULL
+                      OR next_retry_at <![CDATA[ <= ]]> NOW(3)
+                  )
+              )
+              OR (
+                  status = 'PUBLISHING'
+                  AND locked_until <![CDATA[ <= ]]> NOW(3)
+              )
+          )
+    </update>
+
+    <update id="markPublished">
+        UPDATE task_outbox
+        SET status = 'PUBLISHED',
+            published_at = NOW(3),
+            claim_token = NULL,
+            locked_until = NULL
+        WHERE id = #{id}
+          AND status = 'PUBLISHING'
+          AND claim_token = #{token}
+    </update>
+
+    <update id="scheduleRetry">
+        UPDATE task_outbox
+        SET status = 'NEW',
+            retry_count = retry_count + 1,
+            next_retry_at = DATE_ADD(
+                NOW(3),
+                INTERVAL #{delaySeconds} SECOND
+            ),
+            claim_token = NULL,
+            locked_until = NULL
+        WHERE id = #{id}
+          AND status = 'PUBLISHING'
+          AND claim_token = #{token}
+    </update>
 
 </mapper>
