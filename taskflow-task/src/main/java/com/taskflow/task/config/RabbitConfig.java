@@ -2,6 +2,9 @@
 package com.taskflow.task.config;
 
 import org.springframework.amqp.core.*;
+import org.springframework.amqp.rabbit.connection.ConnectionFactory;
+import org.springframework.amqp.rabbit.core.RabbitAdmin;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -19,6 +22,12 @@ public class RabbitConfig {
             "task.definition.created.dlq";
     public static final String DEAD_ROUTING_KEY =
             "task.definition.created.failed";
+
+    @Bean
+    @ConditionalOnMissingBean(AmqpAdmin.class)
+    public RabbitAdmin taskflowRabbitAdmin(ConnectionFactory connectionFactory) {
+        return new RabbitAdmin(connectionFactory);
+    }
 
     // 原有交换机
     @Bean

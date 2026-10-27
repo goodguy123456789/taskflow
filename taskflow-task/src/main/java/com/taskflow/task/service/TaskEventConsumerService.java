@@ -4,18 +4,24 @@ import com.taskflow.task.dto.TaskCreatedEvent;
 import com.taskflow.task.mapper.ConsumerMapper;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class TaskEventConsumerService {
 
     private static final String CONSUMER_NAME =
             "task-created-projection";
 
     private final ConsumerMapper consumerMapper;
+
+    @Value("${taskflow.demo.fail-consumer:false}")
+    private boolean failConsumer;
 
     @Transactional
     public boolean process(TaskCreatedEvent event) {
@@ -34,6 +40,11 @@ public class TaskEventConsumerService {
 
             throw new IllegalArgumentException(
                     "Invalid task created event");
+        }
+
+        if (failConsumer) {
+            log.warn("Simulated consumer failure: eventId={}", event.eventId());
+            throw new IllegalStateException("Simulated consumer failure");
         }
 
         // 2. 尝试登记已处理事件
