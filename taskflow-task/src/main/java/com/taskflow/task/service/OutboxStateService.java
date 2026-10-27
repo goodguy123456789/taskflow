@@ -13,7 +13,7 @@ public class OutboxStateService {
     private final OutboxMapper outboxMapper;
 
     public boolean markSent(Long id, String token) {
-        return outboxMapper.markSent(id, token) == 1;
+        return outboxMapper.markPublished(id, token) == 1;
     }
 
     public boolean scheduleRetry(

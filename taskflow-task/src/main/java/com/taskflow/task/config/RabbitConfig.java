@@ -2,6 +2,9 @@
 package com.taskflow.task.config;
 
 import org.springframework.amqp.core.*;
+import org.springframework.amqp.rabbit.connection.ConnectionFactory;
+import org.springframework.amqp.rabbit.core.RabbitAdmin;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -13,6 +16,12 @@ public class RabbitConfig {
             "task.definition.created";
     public static final String QUEUE =
             "task.definition.created.q";
+
+    @Bean
+    @ConditionalOnMissingBean(AmqpAdmin.class)
+    public RabbitAdmin taskflowRabbitAdmin(ConnectionFactory connectionFactory) {
+        return new RabbitAdmin(connectionFactory);
+    }
 
     @Bean
     public DirectExchange taskExchange() {
