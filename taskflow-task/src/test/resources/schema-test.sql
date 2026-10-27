@@ -30,3 +30,16 @@ CREATE TABLE task_outbox (
     created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
 );
+
+CREATE TABLE processed_message (
+    consumer_name VARCHAR(64) NOT NULL,
+    event_id VARCHAR(64) NOT NULL,
+    processed_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (consumer_name, event_id)
+);
+
+CREATE TABLE task_created_projection (
+    task_id BIGINT NOT NULL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    event_id VARCHAR(64) NOT NULL
+);

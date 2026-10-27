@@ -16,6 +16,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContext;
+import org.springframework.amqp.rabbit.listener.MessageListenerContainer;
+import org.springframework.amqp.rabbit.listener.RabbitListenerEndpointRegistry;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -23,6 +26,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import com.taskflow.task.service.OutboxRelay;
 import org.springframework.test.web.servlet.MvcResult;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -37,6 +41,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.datasource.driver-class-name=org.h2.Driver",
         "spring.datasource.username=sa",
         "spring.datasource.password=",
+        "spring.rabbitmq.listener.simple.auto-startup=false",
+        "taskflow.outbox.relay-enabled=false",
         "spring.sql.init.mode=always",
         "spring.sql.init.schema-locations=classpath:schema-test.sql",
         "mybatis.mapper-locations=classpath:mapper/*.xml",
@@ -54,6 +60,12 @@ class TaskApiTest {
 
     @Autowired
     private JdbcTemplate jdbc;
+
+    @Autowired
+    private RabbitListenerEndpointRegistry listenerRegistry;
+
+    @Autowired
+    private ApplicationContext applicationContext;
 
     @DynamicPropertySource
     static void userServiceUrl(DynamicPropertyRegistry properties) {
@@ -73,6 +85,13 @@ class TaskApiTest {
     static void stopUsers() {
         USERS.stop(0);
         EXECUTOR.shutdownNow();
+    }
+
+    @Test
+    void apiTestsDoNotStartRabbitConsumersOrOutboxRelay() {
+        assertTrue(listenerRegistry.getListenerContainers().stream()
+                .noneMatch(MessageListenerContainer::isRunning));
+        assertTrue(applicationContext.getBeansOfType(OutboxRelay.class).isEmpty());
     }
 
     @Test
