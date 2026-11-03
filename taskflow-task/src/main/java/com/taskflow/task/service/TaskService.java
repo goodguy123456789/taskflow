@@ -25,6 +25,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.DateTimeException;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.Locale;
 import java.util.Objects;
@@ -126,7 +127,9 @@ public class TaskService {
                 : requiredText(request.timezone(), 64, "timezone");
 
         try {
-            ZoneId.of(timezone);
+            nextTriggerAt = nextTriggerAt.atZone(ZoneId.of(timezone))
+                    .withZoneSameInstant(ZoneOffset.UTC)
+                    .toLocalDateTime();
         } catch (DateTimeException ex) {
             throw badRequest("Invalid timezone");
         }

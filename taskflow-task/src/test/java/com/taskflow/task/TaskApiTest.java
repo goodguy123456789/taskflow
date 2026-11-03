@@ -7,6 +7,7 @@ import java.util.UUID;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
@@ -27,6 +28,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import com.taskflow.task.service.OutboxRelay;
+import com.taskflow.task.scheduler.TaskSchedulerJob;
 import org.springframework.test.web.servlet.MvcResult;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -43,6 +45,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.datasource.password=",
         "spring.rabbitmq.listener.simple.auto-startup=false",
         "taskflow.outbox.relay-enabled=false",
+        "taskflow.scheduler.enabled=false",
         "spring.sql.init.mode=always",
         "spring.sql.init.schema-locations=classpath:schema-test.sql",
         "mybatis.mapper-locations=classpath:mapper/*.xml",
@@ -92,6 +95,17 @@ class TaskApiTest {
         assertTrue(listenerRegistry.getListenerContainers().stream()
                 .noneMatch(MessageListenerContainer::isRunning));
         assertTrue(applicationContext.getBeansOfType(OutboxRelay.class).isEmpty());
+        assertTrue(applicationContext.getBeansOfType(TaskSchedulerJob.class).isEmpty());
+    }
+
+    @Test
+    void storesLocalTriggerTimeAsUtc() throws Exception {
+        api.perform(post("/api/tasks").contentType(MediaType.APPLICATION_JSON).content(validRequest()))
+                .andExpect(status().isCreated());
+
+        java.sql.Timestamp stored = jdbc.queryForObject(
+                "SELECT next_trigger_at FROM task_definition", java.sql.Timestamp.class);
+        assertEquals(LocalDateTime.of(2026, 10, 26, 1, 0), stored.toLocalDateTime());
     }
 
     @Test
