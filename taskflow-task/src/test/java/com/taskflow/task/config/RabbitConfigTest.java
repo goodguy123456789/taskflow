@@ -2,11 +2,11 @@ package com.taskflow.task.config;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
+import org.springframework.amqp.rabbit.connection.CachingConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.mockito.Mockito.mock;
 
 class RabbitConfigTest {
 
@@ -15,7 +15,7 @@ class RabbitConfigTest {
         try (AnnotationConfigApplicationContext context =
                      new AnnotationConfigApplicationContext()) {
             context.registerBean(ConnectionFactory.class,
-                    () -> mock(ConnectionFactory.class));
+                    () -> new CachingConnectionFactory());
             context.register(RabbitConfig.class);
             context.refresh();
 
