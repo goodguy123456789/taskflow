@@ -4,61 +4,39 @@
     "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 
 <mapper namespace="com.taskflow.task.mapper.TaskInstanceMapper">
-<update id="claimQueued">
-
-    UPDATE task_instance
-
-    SET
-        status = 'RUNNING',
-
-        lease_owner = #{workerId},
-
-        lease_until = DATE_ADD(
-            UTC_TIMESTAMP(3),
-            INTERVAL #{leaseSeconds} SECOND
-        ),
-
-        lease_version = lease_version + 1,
-
-        started_at = COALESCE(
-            started_at,
-            UTC_TIMESTAMP(3)
-        )
-
-    WHERE id = #{instanceId}
-
-      AND status = 'QUEUED'
-
-      AND (
-          next_run_at IS NULL
-          OR next_run_at <![CDATA[ <= ]]> UTC_TIMESTAMP(3)
-      )
-
+    <update id="claimQueued">
+        UPDATE task_instance
+        SET status = 'RUNNING',
+            lease_owner = #{workerId},
+            lease_until = TIMESTAMPADD(
+                SECOND,
+                #{leaseSeconds},
+                UTC_TIMESTAMP(3)
+            ),
+            lease_version = lease_version + 1,
+            attempt_count = attempt_count + 1
+        WHERE id = #{instanceId}
+          AND scheduled_at <![CDATA[ <= ]]> UTC_TIMESTAMP(3)
+          AND (lease_until IS NULL OR lease_until <![CDATA[ <= ]]> UTC_TIMESTAMP(3))
+          AND status IN ('PENDING', 'QUEUED', 'RETRY_WAIT', 'RUNNING')
 </update>
 
-<select id="findWorkerContext"
-        resultType="com.taskflow.task.dto.WorkerTaskContext">
-
-    SELECT
-        ti.id AS instanceId,
-        ti.definition_id AS definitionId,
-        ti.scheduled_at AS scheduledAt,
-        ti.retry_count AS retryCount,
-        ti.lease_version AS leaseVersion,
-        ti.lease_owner AS workerId,
-
-        td.handler_type AS handlerType,
-        CAST(td.payload AS CHAR) AS payload,
-        td.max_retries AS maxRetries
-
-    FROM task_instance ti
-
-    JOIN task_definition td
-        ON ti.definition_id = td.id
-
-    WHERE ti.id = #{instanceId}
-
-</select>
+    <select id="findWorkerContext"
+            resultType="com.taskflow.task.dto.WorkerTaskContext">
+        SELECT id AS instanceId,
+               definition_id AS definitionId,
+               scheduled_at AS scheduledAt,
+               GREATEST(attempt_count - 1, 0) AS retryCount,
+               max_retries AS maxRetries,
+               attempt_count AS attemptNo,
+               lease_version AS leaseVersion,
+               lease_owner AS workerId,
+               handler_type AS handlerType,
+               payload AS payload
+        FROM task_instance
+        WHERE id = #{instanceId}
+          AND status = 'RUNNING'
+    </select>
 
     <insert id="insert"
             useGeneratedKeys="true"
