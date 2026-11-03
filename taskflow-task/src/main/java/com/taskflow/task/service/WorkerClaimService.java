@@ -47,7 +47,7 @@ public class WorkerClaimService {
             );
         }
 
-        // 4. retry_count 表示已经安排的重试次数
+        // 4. retryCount 由 attempt_count 计算，并非数据库字段
         // 第一次执行 attempt_no = 1
         context.setAttemptNo(
                 context.getRetryCount() + 1

@@ -28,6 +28,8 @@ CREATE TABLE task_outbox (
     retry_count INT NOT NULL DEFAULT 0,
     next_retry_at TIMESTAMP(3),
     published_at TIMESTAMP(3),
+    claim_token VARCHAR(36),
+    locked_until TIMESTAMP(3),
     created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
 );
