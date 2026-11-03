@@ -5,6 +5,11 @@ import org.apache.ibatis.annotations.Param;
 
 @Mapper
 public interface TaskExecutionMapper {
+    int markFailed(@Param("instanceId") Long instanceId,
+                   @Param("attemptNo") int attemptNo,
+                   @Param("workerId") String workerId,
+                   @Param("leaseVersion") Long leaseVersion,
+                   @Param("errorMessage") String errorMessage);
     int markSuccess(
         @Param("instanceId") Long instanceId,
         @Param("attemptNo") int attemptNo,

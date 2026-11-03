@@ -8,6 +8,9 @@ import org.apache.ibatis.annotations.Param;
 @Mapper
 public interface TaskInstanceMapper {
 
+    int markFailed(@Param("instanceId") Long instanceId,
+                   @Param("workerId") String workerId,
+                   @Param("leaseVersion") Long leaseVersion);
     int markSuccess(
         @Param("instanceId") Long instanceId,
         @Param("workerId") String workerId,

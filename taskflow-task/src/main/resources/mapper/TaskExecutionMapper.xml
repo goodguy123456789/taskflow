@@ -36,4 +36,13 @@
         )
     </insert>
 
+    <update id="markFailed">
+        UPDATE task_execution
+        SET status = 'FAILED', end_time = UTC_TIMESTAMP(3), error_message = #{errorMessage}
+        WHERE instance_id = #{instanceId}
+          AND attempt_no = #{attemptNo}
+          AND worker_id = #{workerId}
+          AND lease_version = #{leaseVersion}
+          AND status = 'RUNNING'
+    </update>
 </mapper>

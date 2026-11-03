@@ -84,4 +84,13 @@
       AND lease_until &gt; UTC_TIMESTAMP(3)
     </update>
 
+    <update id="markFailed">
+        UPDATE task_instance
+        SET status = 'FAILED', lease_owner = NULL, lease_until = NULL
+        WHERE id = #{instanceId}
+          AND status = 'RUNNING'
+          AND lease_owner = #{workerId}
+          AND lease_version = #{leaseVersion}
+          AND lease_until &gt; UTC_TIMESTAMP(3)
+    </update>
 </mapper>
