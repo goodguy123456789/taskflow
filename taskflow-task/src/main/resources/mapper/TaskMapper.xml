@@ -4,6 +4,35 @@
     "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 
 <mapper namespace="com.taskflow.task.mapper.TaskMapper">
+    
+<!-- 1. 扫描已经到期的一次性任务 -->
+<select id="selectDueOnceForUpdate"
+        resultType="com.taskflow.task.entity.TaskDefinition">
+
+    SELECT *
+    FROM task_definition
+    WHERE status = 'ENABLED'
+      AND trigger_type = 'ONCE'
+      AND next_trigger_at IS NOT NULL
+      AND next_trigger_at <![CDATA[ <= ]]> UTC_TIMESTAMP(3)
+    ORDER BY next_trigger_at, id
+    LIMIT #{limit}
+    FOR UPDATE SKIP LOCKED
+
+</select>
+
+<!-- 2. 标记本次 ONCE 触发已完成调度 -->
+<update id="markOnceScheduled">
+
+    UPDATE task_definition
+    SET next_trigger_at = NULL
+    WHERE id = #{id}
+      AND status = 'ENABLED'
+      AND trigger_type = 'ONCE'
+      AND next_trigger_at = #{scheduledAt}
+
+</update>
+
 
     <insert id="insert"
             useGeneratedKeys="true"

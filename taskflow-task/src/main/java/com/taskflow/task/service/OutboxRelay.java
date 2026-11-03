@@ -51,6 +51,18 @@ public class OutboxRelay {
     }
 
     private void publish(OutboxEvent event) {
+        String routingKey = switch (event.getEventType()) {
+
+        case "TASK_DEFINITION_CREATED" ->
+            RabbitConfig.ROUTING_KEY;
+
+        case "TASK_INSTANCE_READY" ->
+            RabbitConfig.INSTANCE_READY_KEY;
+
+        default -> throw new IllegalArgumentException(
+            "Unsupported event type: " + event.getEventType()
+        );
+        };
 
         try {
             CorrelationData correlation =
@@ -58,7 +70,7 @@ public class OutboxRelay {
 
             rabbitTemplate.convertAndSend(
                     RabbitConfig.EXCHANGE,
-                    RabbitConfig.ROUTING_KEY,
+                    routingKey,
                     event.getPayload(),
                     message -> {
                         message.getMessageProperties()

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+    PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+    "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.taskflow.task.mapper.TaskInstanceMapper">
+
+    <insert id="insert"
+            useGeneratedKeys="true"
+            keyProperty="id">
+
+        INSERT INTO task_instance (
+            definition_id,
+            user_id,
+            scheduled_at,
+            status,
+            handler_type,
+            payload,
+            max_retries
+        )
+        VALUES (
+            #{definitionId},
+            #{userId},
+            #{scheduledAt},
+            #{status},
+            #{handlerType},
+            CAST(#{payload,jdbcType=VARCHAR} AS JSON),
+            #{maxRetries}
+        )
+
+    </insert>
+
+    <select id="findById"
+            resultType="com.taskflow.task.entity.TaskInstance">
+
+        SELECT *
+        FROM task_instance
+        WHERE id = #{id}
+
+    </select>
+
+</mapper>

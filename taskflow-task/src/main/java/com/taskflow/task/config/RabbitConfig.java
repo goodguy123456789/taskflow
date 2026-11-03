@@ -7,6 +7,7 @@ import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.beans.factory.annotation.Qualifier;
 
 @Configuration
 public class RabbitConfig {
@@ -22,6 +23,35 @@ public class RabbitConfig {
             "task.definition.created.dlq";
     public static final String DEAD_ROUTING_KEY =
             "task.definition.created.failed";
+
+    
+    public static final String INSTANCE_READY_KEY =
+        "task.instance.ready";
+
+    public static final String INSTANCE_READY_QUEUE =
+        "task.instance.ready.q";
+
+@Bean
+public Queue instanceReadyQueue() {
+    return QueueBuilder
+            .durable(INSTANCE_READY_QUEUE)
+            .build();
+}
+
+@Bean
+public Binding instanceReadyBinding(
+        @Qualifier("taskExchange")
+        DirectExchange exchange,
+
+        @Qualifier("instanceReadyQueue")
+        Queue queue) {
+
+    return BindingBuilder
+            .bind(queue)
+            .to(exchange)
+            .with(INSTANCE_READY_KEY);
+}
+        
 
     @Bean
     @ConditionalOnMissingBean(AmqpAdmin.class)
