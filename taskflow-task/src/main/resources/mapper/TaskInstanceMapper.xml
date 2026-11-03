@@ -4,6 +4,61 @@
     "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 
 <mapper namespace="com.taskflow.task.mapper.TaskInstanceMapper">
+<update id="claimQueued">
+
+    UPDATE task_instance
+
+    SET
+        status = 'RUNNING',
+
+        lease_owner = #{workerId},
+
+        lease_until = DATE_ADD(
+            UTC_TIMESTAMP(3),
+            INTERVAL #{leaseSeconds} SECOND
+        ),
+
+        lease_version = lease_version + 1,
+
+        started_at = COALESCE(
+            started_at,
+            UTC_TIMESTAMP(3)
+        )
+
+    WHERE id = #{instanceId}
+
+      AND status = 'QUEUED'
+
+      AND (
+          next_run_at IS NULL
+          OR next_run_at <![CDATA[ <= ]]> UTC_TIMESTAMP(3)
+      )
+
+</update>
+
+<select id="findWorkerContext"
+        resultType="com.taskflow.task.dto.WorkerTaskContext">
+
+    SELECT
+        ti.id AS instanceId,
+        ti.definition_id AS definitionId,
+        ti.scheduled_at AS scheduledAt,
+        ti.retry_count AS retryCount,
+        ti.lease_version AS leaseVersion,
+        ti.lease_owner AS workerId,
+
+        td.handler_type AS handlerType,
+        CAST(td.payload AS CHAR) AS payload,
+        td.max_retries AS maxRetries
+
+    FROM task_instance ti
+
+    JOIN task_definition td
+        ON ti.definition_id = td.id
+
+    WHERE ti.id = #{instanceId}
+
+</select>
 
     <insert id="insert"
             useGeneratedKeys="true"
