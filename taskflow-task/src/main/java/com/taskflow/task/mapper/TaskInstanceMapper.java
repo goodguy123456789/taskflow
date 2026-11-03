@@ -1,6 +1,7 @@
 package com.taskflow.task.mapper;
 
 import com.taskflow.task.entity.TaskInstance;
+import com.taskflow.task.dto.WorkerTaskContext;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import com.taskflow.task.dto.WorkerTaskContext;
