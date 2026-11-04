@@ -88,6 +88,38 @@ public class TaskInstanceMapperTest {
         }
     }
 
+    @Test
+    void retryWaitingInstanceIsNotClaimedUntilItIsQueuedAgain() throws Exception {
+        JdbcDataSource dataSource = new JdbcDataSource();
+        dataSource.setURL("jdbc:h2:mem:retry-wait-claim;MODE=MySQL;DB_CLOSE_DELAY=-1");
+        createSchema(dataSource);
+
+        Configuration configuration = new Configuration();
+        configuration.setEnvironment(new org.apache.ibatis.mapping.Environment(
+                "test", new org.apache.ibatis.transaction.jdbc.JdbcTransactionFactory(), dataSource));
+        configuration.addMapper(TaskInstanceMapper.class);
+        try (InputStream xml = Resources.getResourceAsStream("mapper/TaskInstanceMapper.xml")) {
+            new XMLMapperBuilder(xml, configuration, "mapper/TaskInstanceMapper.xml", configuration.getSqlFragments()).parse();
+        }
+        SqlSessionFactory factory = new SqlSessionFactoryBuilder().build(configuration);
+        try (SqlSession session = factory.openSession(false)) {
+            Long instanceId = insertPendingInstance(session.getConnection());
+            try (Statement statement = session.getConnection().createStatement()) {
+                statement.executeUpdate("UPDATE task_instance SET status = 'RETRY_WAIT' WHERE id = " + instanceId);
+            }
+            TaskInstanceMapper mapper = session.getMapper(TaskInstanceMapper.class);
+            assertEquals(0, mapper.claimQueued(instanceId, "worker-a", 30));
+            try (Statement statement = session.getConnection().createStatement()) {
+                try (var result = statement.executeQuery("SELECT status, attempt_count FROM task_instance WHERE id = " + instanceId)) {
+                    result.next();
+                    assertEquals("RETRY_WAIT", result.getString("status"));
+                    assertEquals(0, result.getInt("attempt_count"));
+                }
+                statement.executeUpdate("UPDATE task_instance SET status = 'QUEUED' WHERE id = " + instanceId);
+            }
+            assertEquals(1, mapper.claimQueued(instanceId, "worker-a", 30));
+        }
+    }
     private static Long insertPendingInstance(Connection connection) throws Exception {
         try (Statement statement = connection.createStatement()) {
             statement.executeUpdate("""

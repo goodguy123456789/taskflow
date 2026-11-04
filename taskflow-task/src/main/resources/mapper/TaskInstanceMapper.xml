@@ -32,7 +32,7 @@
         WHERE id = #{instanceId}
           AND scheduled_at <![CDATA[ <= ]]> UTC_TIMESTAMP(3)
           AND (lease_until IS NULL OR lease_until <![CDATA[ <= ]]> UTC_TIMESTAMP(3))
-          AND status IN ('PENDING', 'QUEUED', 'RETRY_WAIT', 'RUNNING')
+          AND status IN ('PENDING', 'QUEUED', 'RUNNING')
 </update>
 
     <select id="findWorkerContext"
