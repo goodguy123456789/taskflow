@@ -29,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.*;
 public class WorkerResultTransactionTest {
     @Autowired private JdbcTemplate jdbc;
     @Autowired private WorkerResultService service;
+    @Autowired private TaskInstanceMapper instanceMapper;
 
     public static Timestamp utcTimestamp(int precision) {
         return Timestamp.from(Instant.now());
@@ -104,6 +105,24 @@ public class WorkerResultTransactionTest {
         assertThrows(IllegalStateException.class, () -> service.markFinalFailure(context(), "处理失败"));
         assertEquals("RUNNING", jdbc.queryForObject("SELECT status FROM task_instance WHERE id = 100", String.class));
         assertEquals("RUNNING", jdbc.queryForObject("SELECT status FROM task_execution WHERE instance_id = 100", String.class));
+    }
+    @Test
+    void renewsLeaseForCurrentWorker() {
+        Timestamp oldUntil = jdbc.queryForObject("SELECT lease_until FROM task_instance WHERE id = 100", Timestamp.class);
+        assertEquals(1, instanceMapper.renewLease(100L, "worker-A", 1L, 600));
+        Timestamp newUntil = jdbc.queryForObject("SELECT lease_until FROM task_instance WHERE id = 100", Timestamp.class);
+        assertTrue(newUntil.after(oldUntil));
+        assertEquals(1L, jdbc.queryForObject("SELECT lease_version FROM task_instance WHERE id = 100", Long.class));
+    }
+
+    @Test
+    void rejectsLeaseRenewalWhenOwnerVersionOrExpiryIsInvalid() {
+        Timestamp oldUntil = jdbc.queryForObject("SELECT lease_until FROM task_instance WHERE id = 100", Timestamp.class);
+        assertEquals(0, instanceMapper.renewLease(100L, "worker-B", 1L, 600));
+        assertEquals(0, instanceMapper.renewLease(100L, "worker-A", 0L, 600));
+        assertEquals(oldUntil, jdbc.queryForObject("SELECT lease_until FROM task_instance WHERE id = 100", Timestamp.class));
+        jdbc.update("UPDATE task_instance SET lease_until = DATEADD('MINUTE', -1, CURRENT_TIMESTAMP) WHERE id = 100");
+        assertEquals(0, instanceMapper.renewLease(100L, "worker-A", 1L, 600));
     }
     @Configuration
     @EnableTransactionManagement
