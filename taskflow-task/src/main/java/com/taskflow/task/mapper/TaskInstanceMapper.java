@@ -9,6 +9,8 @@ import java.util.List;
 
 @Mapper
 public interface TaskInstanceMapper {
+    List<TaskInstance> selectExpiredForUpdate(@Param("limit") int limit);
+
     int markRetryWait(@Param("instanceId") Long instanceId,
                       @Param("workerId") String workerId,
                       @Param("leaseVersion") Long leaseVersion);

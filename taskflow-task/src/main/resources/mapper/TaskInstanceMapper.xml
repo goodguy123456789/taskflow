@@ -126,4 +126,13 @@
         UPDATE task_instance SET status = 'QUEUED'
         WHERE id = #{id} AND status = 'RETRY_WAIT' AND attempt_count = #{attemptCount}
     </update>
+    <select id="selectExpiredForUpdate" resultType="com.taskflow.task.entity.TaskInstance">
+        SELECT id, attempt_count AS attemptCount, max_retries AS maxRetries,
+               lease_owner AS leaseOwner, lease_until AS leaseUntil, lease_version AS leaseVersion
+        FROM task_instance
+        WHERE status = 'RUNNING' AND lease_until &lt;= UTC_TIMESTAMP(3)
+        ORDER BY lease_until, id
+        LIMIT #{limit}
+        FOR UPDATE SKIP LOCKED
+    </select>
 </mapper>

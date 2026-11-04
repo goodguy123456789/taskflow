@@ -120,6 +120,38 @@ public class TaskInstanceMapperTest {
             assertEquals(1, mapper.claimQueued(instanceId, "worker-a", 30));
         }
     }
+    @Test
+    void selectsOnlyExpiredRunningInstancesInExpiryOrderAndRespectsLimit() throws Exception {
+        JdbcDataSource dataSource = new JdbcDataSource();
+        dataSource.setURL("jdbc:h2:mem:expired-lease-query;MODE=MySQL;DB_CLOSE_DELAY=-1");
+        createSchema(dataSource);
+        Configuration configuration = new Configuration();
+        configuration.setEnvironment(new org.apache.ibatis.mapping.Environment(
+                "test", new org.apache.ibatis.transaction.jdbc.JdbcTransactionFactory(), dataSource));
+        configuration.addMapper(TaskInstanceMapper.class);
+        try (InputStream xml = Resources.getResourceAsStream("mapper/TaskInstanceMapper.xml")) {
+            new XMLMapperBuilder(xml, configuration, "mapper/TaskInstanceMapper.xml", configuration.getSqlFragments()).parse();
+        }
+        SqlSessionFactory factory = new SqlSessionFactoryBuilder().build(configuration);
+        try (SqlSession session = factory.openSession(false)) {
+            try (Statement statement = session.getConnection().createStatement()) {
+                statement.executeUpdate("INSERT INTO task_instance (definition_id, user_id, scheduled_at, status, handler_type, lease_owner, lease_until, lease_version, attempt_count, max_retries) VALUES "
+                        + "(1, 1, UTC_TIMESTAMP(3), 'RUNNING', 'DEMO', 'old-worker', TIMESTAMPADD(SECOND, -120, UTC_TIMESTAMP(3)), 3, 2, 4), "
+                        + "(2, 1, UTC_TIMESTAMP(3), 'RUNNING', 'DEMO', 'new-worker', TIMESTAMPADD(SECOND, -60, UTC_TIMESTAMP(3)), 1, 1, 2), "
+                        + "(3, 1, UTC_TIMESTAMP(3), 'RUNNING', 'DEMO', 'active-worker', TIMESTAMPADD(SECOND, 60, UTC_TIMESTAMP(3)), 1, 1, 2), "
+                        + "(4, 1, UTC_TIMESTAMP(3), 'SUCCESS', 'DEMO', 'done-worker', TIMESTAMPADD(SECOND, -300, UTC_TIMESTAMP(3)), 1, 1, 2)");
+            }
+            TaskInstanceMapper mapper = session.getMapper(TaskInstanceMapper.class);
+            var selected = mapper.selectExpiredForUpdate(1);
+            assertEquals(1, selected.size());
+            assertEquals("old-worker", selected.get(0).getLeaseOwner());
+            assertEquals(3L, selected.get(0).getLeaseVersion());
+            assertEquals(2, selected.get(0).getAttemptCount());
+            assertEquals(4, selected.get(0).getMaxRetries());
+            session.rollback();
+            assertEquals(2, mapper.selectExpiredForUpdate(10).size());
+        }
+    }
     private static Long insertPendingInstance(Connection connection) throws Exception {
         try (Statement statement = connection.createStatement()) {
             statement.executeUpdate("""
