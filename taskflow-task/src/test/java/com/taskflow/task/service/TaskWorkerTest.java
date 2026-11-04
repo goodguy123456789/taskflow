@@ -67,12 +67,13 @@ class TaskWorkerTest {
     }
 
     @Test
-    void propagatesRetryableHandlerFailureWithoutMarkingFinal() {
+    void savesRetryableHandlerFailureWithoutMarkingFinal() {
         context.setMaxRetries(2);
         IllegalStateException failure = new IllegalStateException("暂时失败");
         when(handler.execute(context)).thenThrow(failure);
-        assertSame(failure, assertThrows(IllegalStateException.class, () -> worker.execute(100L, "worker-A")));
-        verifyNoInteractions(resultService);
+        assertEquals(TaskWorker.ExecutionOutcome.RETRY_WAIT, worker.execute(100L, "worker-A"));
+        verify(resultService).markRetryWait(context, "暂时失败");
+        verify(resultService, never()).markFinalFailure(any(), any());
         verify(heartbeat).close();
     }
 

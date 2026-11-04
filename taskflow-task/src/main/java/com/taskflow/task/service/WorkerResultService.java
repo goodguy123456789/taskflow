@@ -62,4 +62,18 @@ public class WorkerResultService {
             throw new IllegalStateException("Failed to update execution attempt: " + context.getInstanceId());
         }
     }
+    @Transactional
+    public void markRetryWait(WorkerTaskContext context, String errorMessage) {
+        int instanceRows = instanceMapper.markRetryWait(
+                context.getInstanceId(), context.getWorkerId(), context.getLeaseVersion());
+        if (instanceRows != 1) {
+            throw new IllegalStateException("Task lease is no longer valid: " + context.getInstanceId());
+        }
+        int executionRows = executionMapper.markFailed(
+                context.getInstanceId(), context.getAttemptNo(), context.getWorkerId(),
+                context.getLeaseVersion(), errorMessage);
+        if (executionRows != 1) {
+            throw new IllegalStateException("Failed to update execution attempt: " + context.getInstanceId());
+        }
+    }
 }

@@ -5,8 +5,16 @@ import com.taskflow.task.dto.WorkerTaskContext;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.util.List;
+
 @Mapper
 public interface TaskInstanceMapper {
+    int markRetryWait(@Param("instanceId") Long instanceId,
+                      @Param("workerId") String workerId,
+                      @Param("leaseVersion") Long leaseVersion);
+    List<TaskInstance> selectDueRetriesForUpdate(@Param("limit") int limit,
+                                                 @Param("delaySeconds") int delaySeconds);
+    int queueRetry(@Param("id") Long id, @Param("attemptCount") int attemptCount);
     int renewLease(
         @Param("instanceId") Long instanceId,
         @Param("workerId") String workerId,

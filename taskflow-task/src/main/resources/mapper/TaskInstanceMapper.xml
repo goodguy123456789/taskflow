@@ -107,4 +107,23 @@
           AND lease_version = #{leaseVersion}
           AND lease_until &gt; UTC_TIMESTAMP(3)
     </update>
+    <update id="markRetryWait">
+        UPDATE task_instance SET status = 'RETRY_WAIT', lease_owner = NULL, lease_until = NULL
+        WHERE id = #{instanceId} AND status = 'RUNNING'
+          AND lease_owner = #{workerId} AND lease_version = #{leaseVersion}
+          AND lease_until &gt; UTC_TIMESTAMP(3)
+    </update>
+    <select id="selectDueRetriesForUpdate" resultType="com.taskflow.task.entity.TaskInstance">
+        SELECT ti.id, ti.definition_id AS definitionId, ti.user_id AS userId,
+               ti.scheduled_at AS scheduledAt, ti.attempt_count AS attemptCount
+        FROM task_instance ti
+        JOIN task_execution te ON te.instance_id = ti.id AND te.attempt_no = ti.attempt_count
+        WHERE ti.status = 'RETRY_WAIT' AND te.status = 'FAILED' AND te.end_time IS NOT NULL
+          AND te.end_time &lt;= TIMESTAMPADD(SECOND, -#{delaySeconds}, UTC_TIMESTAMP(3))
+        ORDER BY te.end_time, ti.id LIMIT #{limit} FOR UPDATE SKIP LOCKED
+    </select>
+    <update id="queueRetry">
+        UPDATE task_instance SET status = 'QUEUED'
+        WHERE id = #{id} AND status = 'RETRY_WAIT' AND attempt_count = #{attemptCount}
+    </update>
 </mapper>

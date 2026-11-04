@@ -124,6 +124,21 @@ public class WorkerResultTransactionTest {
         jdbc.update("UPDATE task_instance SET lease_until = DATEADD('MINUTE', -1, CURRENT_TIMESTAMP) WHERE id = 100");
         assertEquals(0, instanceMapper.renewLease(100L, "worker-A", 1L, 600));
     }
+    @Test
+    void retryFailureUpdatesBothRecords() {
+        jdbc.update("INSERT INTO task_execution(instance_id, attempt_no, worker_id, lease_version, status) VALUES (100, 1, 'worker-A', 1, 'RUNNING')");
+        service.markRetryWait(context(), "retry later");
+        assertEquals("RETRY_WAIT", jdbc.queryForObject("SELECT status FROM task_instance WHERE id = 100", String.class));
+        assertEquals("FAILED", jdbc.queryForObject("SELECT status FROM task_execution WHERE instance_id = 100", String.class));
+        assertNotNull(jdbc.queryForObject("SELECT end_time FROM task_execution WHERE instance_id = 100", Timestamp.class));
+    }
+
+    @Test
+    void missingExecutionRollsBackRetryWait() {
+        assertThrows(IllegalStateException.class, () -> service.markRetryWait(context(), "retry later"));
+        assertEquals("RUNNING", jdbc.queryForObject("SELECT status FROM task_instance WHERE id = 100", String.class));
+        assertEquals("worker-A", jdbc.queryForObject("SELECT lease_owner FROM task_instance WHERE id = 100", String.class));
+    }
     @Configuration
     @EnableTransactionManagement
     static class TestConfig {
@@ -142,7 +157,7 @@ public class WorkerResultTransactionTest {
         @Bean SqlSessionFactory sqlSessionFactory(DataSource ds) throws Exception {
             SqlSessionFactoryBean factory = new SqlSessionFactoryBean();
             factory.setDataSource(ds);
-            factory.setMapperLocations(new ClassPathResource("mapper/TaskInstanceMapper.xml"), new ClassPathResource("mapper/TaskExecutionMapper.xml"));
+            factory.setMapperLocations(new ClassPathResource("mapper/TaskInstanceMapper.xml"), new ClassPathResource("mapper/TaskExecutionMapper.xml"), new ClassPathResource("mapper/OutboxMapper.xml"));
             return factory.getObject();
         }
         @Bean SqlSessionTemplate sqlSessionTemplate(SqlSessionFactory factory) { return new SqlSessionTemplate(factory); }

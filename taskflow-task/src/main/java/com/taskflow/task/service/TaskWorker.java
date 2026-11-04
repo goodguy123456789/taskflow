@@ -27,8 +27,7 @@ public class TaskWorker {
                 TaskHandler handler = handlerRegistry.getHandler(context.getHandlerType());
                 resultJson = handler.execute(context);
             } catch (RuntimeException ex) {
-                if (heartbeat.isLeaseLost()
-                        || RetryPolicy.canRetry(context.getAttemptNo(), context.getMaxRetries())) {
+                if (heartbeat.isLeaseLost()) {
                     throw ex;
                 }
                 String message = ex.getMessage();
@@ -38,6 +37,10 @@ public class TaskWorker {
                 int length = message.codePointCount(0, message.length());
                 if (length > 2000) {
                     message = message.substring(0, message.offsetByCodePoints(0, 2000));
+                }
+                if (RetryPolicy.canRetry(context.getAttemptNo(), context.getMaxRetries())) {
+                    resultService.markRetryWait(context, message);
+                    return ExecutionOutcome.RETRY_WAIT;
                 }
                 resultService.markFinalFailure(context, message);
                 return ExecutionOutcome.FAILED;
@@ -53,6 +56,7 @@ public class TaskWorker {
 
     public enum ExecutionOutcome {
         NOT_CLAIMED,
+        RETRY_WAIT,
         SUCCEEDED,
         FAILED
     }
