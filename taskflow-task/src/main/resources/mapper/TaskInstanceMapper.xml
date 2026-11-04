@@ -4,6 +4,20 @@
     "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 
 <mapper namespace="com.taskflow.task.mapper.TaskInstanceMapper">
+    <update id="renewLease">
+    UPDATE task_instance
+    SET lease_until = TIMESTAMPADD(
+            SECOND,
+            #{leaseSeconds},
+            UTC_TIMESTAMP(3)
+        )
+    WHERE id = #{instanceId}
+      AND status = 'RUNNING'
+      AND lease_owner = #{workerId}
+      AND lease_version = #{leaseVersion}
+      AND lease_until &gt; UTC_TIMESTAMP(3)
+    </update>
+
     <update id="claimQueued">
         UPDATE task_instance
         SET status = 'RUNNING',

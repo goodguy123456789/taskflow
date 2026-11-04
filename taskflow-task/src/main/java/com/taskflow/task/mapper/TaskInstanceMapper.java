@@ -7,7 +7,12 @@ import org.apache.ibatis.annotations.Param;
 
 @Mapper
 public interface TaskInstanceMapper {
-
+    int renewLease(
+        @Param("instanceId") Long instanceId,
+        @Param("workerId") String workerId,
+        @Param("leaseVersion") Long leaseVersion,
+        @Param("leaseSeconds") int leaseSeconds
+    );
     int markFailed(@Param("instanceId") Long instanceId,
                    @Param("workerId") String workerId,
                    @Param("leaseVersion") Long leaseVersion);
