@@ -18,6 +18,18 @@
       AND lease_until &gt; UTC_TIMESTAMP(3)
     </update>
 
+    <update id="recoverExpired">
+    UPDATE task_instance
+    SET status = #{newStatus},
+        lease_owner = NULL,
+        lease_until = NULL
+    WHERE id = #{id}
+      AND status = 'RUNNING'
+      AND lease_owner = #{workerId}
+      AND lease_version = #{leaseVersion}
+      AND lease_until &lt;= UTC_TIMESTAMP(3)
+    </update>
+
     <update id="claimQueued">
         UPDATE task_instance
         SET status = 'RUNNING',
@@ -32,7 +44,7 @@
         WHERE id = #{instanceId}
           AND scheduled_at <![CDATA[ <= ]]> UTC_TIMESTAMP(3)
           AND (lease_until IS NULL OR lease_until <![CDATA[ <= ]]> UTC_TIMESTAMP(3))
-          AND status IN ('PENDING', 'QUEUED', 'RUNNING')
+          AND status IN ('PENDING', 'QUEUED')
 </update>
 
     <select id="findWorkerContext"

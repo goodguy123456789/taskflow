@@ -45,4 +45,11 @@ public interface TaskInstanceMapper {
     WorkerTaskContext findWorkerContext(
         @Param("instanceId") Long instanceId
    );
+
+   int recoverExpired(
+        @Param("id") Long id,
+        @Param("workerId") String workerId,
+        @Param("leaseVersion") Long leaseVersion,
+        @Param("newStatus") String newStatus
+);
 }
