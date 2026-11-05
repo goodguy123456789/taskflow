@@ -2,6 +2,8 @@ package com.taskflow.task.listener;
 
 import com.taskflow.task.config.RabbitConfig;
 import com.taskflow.task.dto.TaskInstanceReadyEvent;
+import com.taskflow.task.entity.TaskInstance;
+import com.taskflow.task.mapper.TaskInstanceMapper;
 import com.taskflow.task.service.TaskWorker;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -15,6 +17,7 @@ public class TaskInstanceReadyListener {
 
     private final TaskInstanceReadyEventParser parser;
     private final TaskWorker taskWorker;
+    private final TaskInstanceMapper instanceMapper;
 
     /**
      * 当前服务进程中的 Worker 标识。
@@ -27,10 +30,12 @@ public class TaskInstanceReadyListener {
 
     public TaskInstanceReadyListener(
             TaskInstanceReadyEventParser parser,
-            TaskWorker taskWorker
+            TaskWorker taskWorker,
+            TaskInstanceMapper instanceMapper
     ) {
         this.parser = parser;
         this.taskWorker = taskWorker;
+        this.instanceMapper = instanceMapper;
     }
 
     @RabbitListener(
@@ -47,10 +52,17 @@ public class TaskInstanceReadyListener {
                 );
 
         if (outcome == TaskWorker.ExecutionOutcome.NOT_CLAIMED) {
-            throw new IllegalStateException(
-                    "Task instance was not claimed: "
-                            + event.instanceId()
-            );
+            TaskInstance instance = instanceMapper.findById(event.instanceId());
+            if (instance == null) {
+                throw new IllegalStateException("Task instance not found: " + event.instanceId());
+            }
+            if ("SUCCESS".equals(instance.getStatus()) || "FAILED".equals(instance.getStatus())) {
+                log.info("Terminal task instance ignored: instanceId={}, status={}",
+                        event.instanceId(), instance.getStatus());
+                return;
+            }
+            throw new IllegalStateException("Task instance was not claimed: "
+                    + event.instanceId() + ", status=" + instance.getStatus());
         }
 
         log.info(
