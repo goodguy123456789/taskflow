@@ -61,6 +61,14 @@ public class TaskInstanceReadyListener {
                         event.instanceId(), instance.getStatus());
                 return;
             }
+            log.warn(
+                    "Task instance not claimed: instanceId={}, eventId={}, status={}, workerId={}",
+                    event.instanceId(),
+                    event.eventId(),
+                    instance.getStatus(),
+                    workerId
+            );
+
             throw new IllegalStateException("Task instance was not claimed: "
                     + event.instanceId() + ", status=" + instance.getStatus());
         }
