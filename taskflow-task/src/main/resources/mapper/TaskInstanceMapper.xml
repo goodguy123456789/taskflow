@@ -110,7 +110,7 @@
       AND lease_until &gt; UTC_TIMESTAMP(3)
     </update>
 
-    <update id="markFinalFailure">
+    <update id="markFailed">
         UPDATE task_instance
         SET status = 'FAILED', lease_owner = NULL, lease_until = NULL
         WHERE id = #{instanceId}
