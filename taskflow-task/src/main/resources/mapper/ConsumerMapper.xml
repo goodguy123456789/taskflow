@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+    PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+    "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.taskflow.task.mapper.ConsumerMapper">
+
+    <insert id="insertProcessedMessage">
+
+        INSERT IGNORE INTO processed_message (
+            consumer_name,
+            event_id
+        )
+        VALUES (
+            #{consumerName},
+            #{eventId}
+        )
+
+    </insert>
+
+    <insert id="insertProjection">
+
+        INSERT INTO task_created_projection (
+            task_id,
+            user_id,
+            event_id
+        )
+        VALUES (
+            #{taskId},
+            #{userId},
+            #{eventId}
+        )
+
+    </insert>
+
+</mapper>
