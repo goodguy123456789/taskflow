@@ -11,7 +11,11 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-@ConditionalOnProperty(prefix = "taskflow.scheduler", name = "enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(
+    prefix = "taskflow.scheduler",
+    name = "enabled", 
+    havingValue = "true", 
+    matchIfMissing = true)
 public class RetryDispatchJob {
     private final RetryDispatchService retryDispatchService;
 

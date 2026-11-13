@@ -131,7 +131,10 @@
         FROM task_instance ti
         JOIN task_execution te ON te.instance_id = ti.id AND te.attempt_no = ti.attempt_count
         WHERE ti.status = 'RETRY_WAIT' AND te.status = 'FAILED' AND te.end_time IS NOT NULL
-          AND te.end_time &lt;= TIMESTAMPADD(SECOND, -#{delaySeconds}, UTC_TIMESTAMP(3))
+        AND COALESCE(
+              te.retry_due_at,
+              TIMESTAMPADD(SECOND, #{delaySeconds}, te.end_time)
+          ) &lt;= UTC_TIMESTAMP(3)
         ORDER BY te.end_time, ti.id LIMIT #{limit} FOR UPDATE SKIP LOCKED
     </select>
     <update id="queueRetry">

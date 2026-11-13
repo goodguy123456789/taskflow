@@ -1,0 +1,59 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: taskflow-task
+  datasource:
+    url: jdbc:mysql://mysql:3306/taskflow_task?serverTimezone=UTC
+    username: taskflow
+    password: ${DAY43_MYSQL_PASSWORD}
+  rabbitmq:
+    host: rabbitmq
+    port: 5672
+    username: taskflow
+    password: ${DAY43_RABBIT_PASSWORD}
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+    listener:
+      simple:
+        acknowledge-mode: auto
+        default-requeue-rejected: false
+        prefetch: 1
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 1s
+          multiplier: 2
+          max-interval: 5s
+          stateless: true
+  cloud:
+    nacos:
+      discovery:
+        enabled: false
+
+taskflow:
+  user-service:
+    url: http://host.docker.internal:8081
+  worker:
+    listener-enabled: true
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db

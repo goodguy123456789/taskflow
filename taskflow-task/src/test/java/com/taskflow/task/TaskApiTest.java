@@ -28,7 +28,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import com.taskflow.task.service.OutboxRelay;
-import com.taskflow.task.scheduler.TaskSchedulerJob;
+import com.taskflow.task.scheduler.LeaseRecoveryJob;
+import com.taskflow.task.scheduler.RetryDispatchJob;
 import org.springframework.test.web.servlet.MvcResult;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -91,11 +92,12 @@ class TaskApiTest {
     }
 
     @Test
-    void apiTestsDoNotStartRabbitConsumersOrOutboxRelay() {
+    void apiTestsDoNotStartBackgroundProcessing() {
         assertTrue(listenerRegistry.getListenerContainers().stream()
                 .noneMatch(MessageListenerContainer::isRunning));
         assertTrue(applicationContext.getBeansOfType(OutboxRelay.class).isEmpty());
-        assertTrue(applicationContext.getBeansOfType(TaskSchedulerJob.class).isEmpty());
+        assertTrue(applicationContext.getBeansOfType(LeaseRecoveryJob.class).isEmpty());
+        assertTrue(applicationContext.getBeansOfType(RetryDispatchJob.class).isEmpty());
     }
 
     @Test

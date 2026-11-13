@@ -106,4 +106,27 @@ public Binding instanceReadyBinding(
                 .to(deadLetterExchange)
                 .with(DEAD_ROUTING_KEY);
     }
+
+    public static final String INSTANCE_READY_DLQ = "task.instance.ready.dlq";
+public static final String INSTANCE_READY_DEAD_ROUTING_KEY =
+        "task.instance.ready.failed";
+
+@Bean
+public Queue instanceReadyDeadLetterQueue() {
+    // 实例消息专用的死信队列。
+    return QueueBuilder.durable(INSTANCE_READY_DLQ)
+            .withArgument("x-queue-type", "classic")
+            .build();
+}
+
+@Bean
+public Binding instanceReadyDeadLetterBinding(
+        @Qualifier("deadLetterExchange") DirectExchange deadLetterExchange,
+        @Qualifier("instanceReadyDeadLetterQueue") Queue deadLetterQueue
+) {
+    // 只有使用实例失败路由键的消息，才会路由到这条队列。
+    return BindingBuilder.bind(deadLetterQueue)
+            .to(deadLetterExchange)
+            .with(INSTANCE_READY_DEAD_ROUTING_KEY);
+}
 }

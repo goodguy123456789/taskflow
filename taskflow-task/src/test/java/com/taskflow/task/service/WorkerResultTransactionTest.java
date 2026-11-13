@@ -40,7 +40,7 @@ public class WorkerResultTransactionTest {
         jdbc.execute("DROP TABLE IF EXISTS task_execution");
         jdbc.execute("DROP TABLE IF EXISTS task_instance");
         jdbc.execute("CREATE TABLE task_instance (id BIGINT PRIMARY KEY, status VARCHAR(20) NOT NULL, lease_owner VARCHAR(128), lease_until TIMESTAMP(3), lease_version BIGINT NOT NULL)");
-        jdbc.execute("CREATE TABLE task_execution (id BIGINT AUTO_INCREMENT PRIMARY KEY, instance_id BIGINT NOT NULL, attempt_no INT NOT NULL, worker_id VARCHAR(128), lease_version BIGINT NOT NULL, status VARCHAR(20) NOT NULL, end_time TIMESTAMP(3), result_summary JSON, error_message VARCHAR(2000))");
+        jdbc.execute("CREATE TABLE task_execution (id BIGINT AUTO_INCREMENT PRIMARY KEY, instance_id BIGINT NOT NULL, attempt_no INT NOT NULL, worker_id VARCHAR(128), lease_version BIGINT NOT NULL, status VARCHAR(20) NOT NULL, end_time TIMESTAMP(3), retry_due_at TIMESTAMP(3), result_summary JSON, error_message VARCHAR(2000))");
         jdbc.update("INSERT INTO task_instance VALUES (100, 'RUNNING', 'worker-A', DATEADD('MINUTE', 5, CURRENT_TIMESTAMP), 1)");
     }
 
@@ -128,6 +128,13 @@ public class WorkerResultTransactionTest {
     void retryFailureUpdatesBothRecords() {
         jdbc.update("INSERT INTO task_execution(instance_id, attempt_no, worker_id, lease_version, status) VALUES (100, 1, 'worker-A', 1, 'RUNNING')");
         service.markRetryWait(context(), "retry later");
+        Timestamp dueAt = jdbc.queryForObject(
+                "SELECT retry_due_at FROM task_execution WHERE instance_id = 100", Timestamp.class);
+        assertNotNull(dueAt);
+        Timestamp end = jdbc.queryForObject(
+                "SELECT end_time FROM task_execution WHERE instance_id = 100", Timestamp.class);
+        long wait = (dueAt.getTime() - end.getTime()) / 1000;
+        assertTrue(wait >= 24 && wait <= 30);
         assertEquals("RETRY_WAIT", jdbc.queryForObject("SELECT status FROM task_instance WHERE id = 100", String.class));
         assertEquals("FAILED", jdbc.queryForObject("SELECT status FROM task_execution WHERE instance_id = 100", String.class));
         assertNotNull(jdbc.queryForObject("SELECT end_time FROM task_execution WHERE instance_id = 100", Timestamp.class));

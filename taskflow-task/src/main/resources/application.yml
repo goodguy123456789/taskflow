@@ -1,17 +1,47 @@
-
 server:
   port: 8082
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health # 通过 HTTP 暴露 health 端点及其健康分组
+  endpoint:
+    health:
+      probes:
+        enabled: true # 在本地也启用 liveness 和 readiness
+      group:
+        readiness:
+          # 检查应用是否已就绪，以及 Task 的数据源能否连接
+          include: readinessState,db
+
 spring:
   rabbitmq:
+    host: localhost
+    port: 5672
+    username: ${TASKFLOW_RABBIT_USER:guest}
+    password: ${TASKFLOW_RABBIT_PASSWORD:guest}
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
     listener:
       simple:
+        acknowledge-mode: auto
         default-requeue-rejected: false
+        prefetch: 1
         retry:
           enabled: true
           max-attempts: 3
           initial-interval: 1s
-          multiplier: 1
+          multiplier: 2
+          max-interval: 5s
+          stateless: true
+  datasource:
+    url: jdbc:mysql://localhost:3306/taskflow_task
+    username: root
+    password: ${TASKFLOW_DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
   application:
     name: taskflow-task
   cloud:
@@ -21,9 +51,21 @@ spring:
           taskflow-user:
             connectTimeout: 2000
             readTimeout: 3000
+    nacos:
+      discovery:
+        enabled: false        
 
 taskflow:
-  demo:
-    fail-consumer: false
+  scheduler:
+    poll-delay-ms: 5000
+    cron-misfire-grace-seconds: 300
   user-service:
     url: http://localhost:8081
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+logging:
+  level:
+    "[org.springframework.transaction]": TRACE
+    "[org.springframework.jdbc.datasource]": DEBUG

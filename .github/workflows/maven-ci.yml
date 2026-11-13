@@ -1,0 +1,36 @@
+name: TaskFlow Maven CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      # 从根 POM 构建，测试失败时 Maven 会返回非零退出码。
+      - name: Build and test all modules
+        run: bash ./mvnw -B verify
+
+      # 测试失败时也保留报告，便于定位失败的用例。
+      - name: Upload test reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: '**/target/surefire-reports/TEST-*.xml'
+          if-no-files-found: warn

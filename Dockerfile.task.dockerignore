@@ -1,0 +1,7 @@
+.git
+**/target
+**/.env
+**/.env.*
+**/application*.yml
+**/application*.yaml
+**/application*.properties

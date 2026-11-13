@@ -1,0 +1,27 @@
+# 第一阶段使用 Maven 和 JDK 17 构建 Spring Boot JAR。
+FROM maven:3.9-eclipse-temurin-17 AS build
+WORKDIR /workspace
+
+# 根 POM 声明了所有模块，Maven 读取项目时需要看到这些模块的 POM。
+COPY pom.xml ./
+COPY taskflow-common/pom.xml taskflow-common/
+COPY taskflow-user/pom.xml taskflow-user/
+COPY taskflow-task/pom.xml taskflow-task/
+COPY taskflow-scheduler/pom.xml taskflow-scheduler/
+COPY taskflow-gateway/pom.xml taskflow-gateway/
+
+COPY taskflow-common/src/main/ taskflow-common/src/main/
+COPY taskflow-task/src/main/java/ taskflow-task/src/main/java/
+COPY taskflow-task/src/main/resources/mapper/ taskflow-task/src/main/resources/mapper/
+
+# -pl 选中 Task，-am 同时构建它依赖的项目内模块。
+RUN mvn -B -pl taskflow-task -am -DskipTests package
+
+# 第二阶段提供 Java 17 运行环境，只从构建阶段拿可执行 JAR。
+FROM eclipse-temurin:17-jre
+WORKDIR /app
+
+COPY --from=build /workspace/taskflow-task/target/taskflow-task-0.1.0-SNAPSHOT.jar /app/task.jar
+
+EXPOSE 8082
+ENTRYPOINT ["java", "-jar", "/app/task.jar", "--spring.config.location=file:/config/application.yml"]

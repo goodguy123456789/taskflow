@@ -1,0 +1,10 @@
+spring:
+  application:
+    name: taskflow-scheduler
+  main:
+    web-application-type: none
+
+taskflow:
+  remote-dispatch:
+    url: http://127.0.0.1:8082/internal/scheduler/dispatch-due
+    poll-delay-ms: 5000

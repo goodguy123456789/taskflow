@@ -1,0 +1,12 @@
+spring:
+  cloud:
+    nacos:
+      discovery:
+        enabled: true
+        register-enabled: false
+        server-addr: 127.0.0.1:8848
+
+taskflow:
+  user-service:
+    # 覆盖普通配置中的固定地址，让 Feign 按服务名选择实例。
+    url: ""

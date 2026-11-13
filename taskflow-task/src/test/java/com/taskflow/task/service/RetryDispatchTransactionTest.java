@@ -26,10 +26,10 @@ class RetryDispatchTransactionTest {
         jdbc.execute("DROP TABLE IF EXISTS task_execution");
         jdbc.execute("DROP TABLE IF EXISTS task_instance");
         jdbc.execute("CREATE TABLE task_instance (id BIGINT PRIMARY KEY, definition_id BIGINT NOT NULL, user_id BIGINT NOT NULL, scheduled_at TIMESTAMP(3) NOT NULL, status VARCHAR(20) NOT NULL, attempt_count INT NOT NULL)");
-        jdbc.execute("CREATE TABLE task_execution (instance_id BIGINT NOT NULL, attempt_no INT NOT NULL, status VARCHAR(20) NOT NULL, end_time TIMESTAMP(3), UNIQUE(instance_id, attempt_no))");
+        jdbc.execute("CREATE TABLE task_execution (instance_id BIGINT NOT NULL, attempt_no INT NOT NULL, status VARCHAR(20) NOT NULL, end_time TIMESTAMP(3), retry_due_at TIMESTAMP(3), UNIQUE(instance_id, attempt_no))");
         jdbc.execute("CREATE TABLE task_outbox (id BIGINT AUTO_INCREMENT PRIMARY KEY, event_id VARCHAR(64) NOT NULL UNIQUE, aggregate_type VARCHAR(64) NOT NULL, aggregate_id BIGINT NOT NULL, event_type VARCHAR(64) NOT NULL, payload JSON NOT NULL)");
         jdbc.update("INSERT INTO task_instance VALUES (100, 10, 1, TIMESTAMP '2026-10-26 01:00:00', 'RETRY_WAIT', 1)");
-        jdbc.update("INSERT INTO task_execution VALUES (100, 1, 'FAILED', UTC_TIMESTAMP(3))");
+        jdbc.update("INSERT INTO task_execution (instance_id, attempt_no, status, end_time) VALUES (100, 1, 'FAILED', UTC_TIMESTAMP(3))");
     }
 
     @Test
@@ -49,6 +49,26 @@ class RetryDispatchTransactionTest {
         jdbc.execute("DROP TABLE task_outbox");
         assertThrows(RuntimeException.class, () -> service.dispatchDue(30, 10));
         assertEquals("RETRY_WAIT", jdbc.queryForObject("SELECT status FROM task_instance WHERE id=100", String.class));
+    }
+
+    @Test
+    void storedDeadlineTakesPrecedenceOverFixedDelay() {
+        jdbc.update("""
+                UPDATE task_execution
+                SET end_time = TIMESTAMPADD(SECOND, -60, UTC_TIMESTAMP(3)),
+                    retry_due_at = TIMESTAMPADD(SECOND, 60, UTC_TIMESTAMP(3))
+                WHERE instance_id = 100
+                """);
+        assertEquals(0, service.dispatchDue(30, 10));
+        jdbc.update("""
+                UPDATE task_execution
+                SET end_time = TIMESTAMPADD(SECOND, -10, UTC_TIMESTAMP(3)),
+                    retry_due_at = TIMESTAMPADD(SECOND, -5, UTC_TIMESTAMP(3))
+                WHERE instance_id = 100
+                """);
+        assertEquals(1, service.dispatchDue(30, 10));
+        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM task_outbox", Integer.class));
+        assertEquals(0, service.dispatchDue(30, 10));
     }
 
     @Configuration

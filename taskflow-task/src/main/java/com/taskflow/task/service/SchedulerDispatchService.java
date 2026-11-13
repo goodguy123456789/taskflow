@@ -8,11 +8,15 @@ import com.taskflow.task.entity.TaskInstance;
 import com.taskflow.task.mapper.OutboxMapper;
 import com.taskflow.task.mapper.TaskInstanceMapper;
 import com.taskflow.task.mapper.TaskMapper;
+import com.taskflow.task.scheduler.CronTriggerCalculator;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -26,23 +30,55 @@ public class SchedulerDispatchService {
     private final OutboxMapper outboxMapper;
     private final ObjectMapper objectMapper;
 
+    private long cronMisfireGraceSeconds;
+
+    @Value("${taskflow.scheduler.cron-misfire-grace-seconds:300}")
+    void setCronMisfireGraceSeconds(long seconds) {
+        if (seconds < 0) {
+            throw new IllegalArgumentException("cron-misfire-grace-seconds must not be negative");
+        }
+        this.cronMisfireGraceSeconds = seconds;
+    }
+
     @Transactional
-    public int scheduleDueOnceBatch() {
+    public int scheduleDueBatch() {
 
         // 1. 查询并锁定最多 10 个到期任务定义
         List<TaskDefinition> definitions =
-                taskMapper.selectDueOnceForUpdate(10);
+                taskMapper.selectDueForUpdate(10);
 
+        if (definitions.isEmpty()) {
+            return 0;
+        }
+
+        // 和到期查询用同一个数据库时钟，每轮只计算一次补偿窗口。
+        LocalDateTime cutoff = taskMapper.selectUtcNow().minusSeconds(cronMisfireGraceSeconds);
+        int dispatched = 0;
         for (TaskDefinition definition : definitions) {
+            LocalDateTime scheduledAt = definition.getNextTriggerAt();
+            boolean cron = "CRON".equals(definition.getTriggerType());
+            ZoneId taskZone = cron ? ZoneId.of(definition.getTimezone()) : null;
+
+            if (cron && scheduledAt.isBefore(cutoff)) {
+                // 跳到窗口内第一个匹配点。nextUtcAfter 是严格大于，所以包含窗口边界。
+                LocalDateTime firstRetained = CronTriggerCalculator.nextUtcAfter(
+                        definition.getCronExpression(), cutoff.minusNanos(1), taskZone);
+                advanceSchedule(definition, scheduledAt, firstRetained);
+                // 这轮只跳过过旧触发点。保留的触发点由后续扫描处理。
+                continue;
+            }
+
+            LocalDateTime nextTriggerAt = cron
+                    ? CronTriggerCalculator.nextUtcAfter(
+                            definition.getCronExpression(), scheduledAt, taskZone)
+                    : null;
 
             // 2. 创建本次执行实例
             TaskInstance instance = new TaskInstance();
 
             instance.setDefinitionId(definition.getId());
             instance.setUserId(definition.getUserId());
-            instance.setScheduledAt(
-                    definition.getNextTriggerAt()
-            );
+            instance.setScheduledAt(scheduledAt);
             instance.setStatus("PENDING");
             instance.setHandlerType(
                     definition.getHandlerType()
@@ -96,18 +132,22 @@ public class SchedulerDispatchService {
                         "Failed to save instance event");
             }
 
-            // 4. 消除本次 ONCE 触发资格
-            int updated = taskMapper.markOnceScheduled(
-                    definition.getId(),
-                    definition.getNextTriggerAt()
-            );
-
-            if (updated != 1) {
-                throw new IllegalStateException(
-                        "Failed to advance task schedule");
-            }
+            // 创建实例、写 Outbox 和推进定义仍在同一个事务里。
+            advanceSchedule(definition, scheduledAt, nextTriggerAt);
+            dispatched++;
         }
 
-        return definitions.size();
+        return dispatched;
+    }
+
+    private void advanceSchedule(
+            TaskDefinition definition, LocalDateTime scheduledAt, LocalDateTime nextTriggerAt
+    ) {
+        int updated = taskMapper.advanceSchedule(
+                definition.getId(), definition.getTriggerType(), scheduledAt, nextTriggerAt
+        );
+        if (updated != 1) {
+            throw new IllegalStateException("Failed to advance task schedule");
+        }
     }
 }

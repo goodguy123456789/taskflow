@@ -11,6 +11,7 @@ import com.taskflow.task.dto.CreateTaskResult;
 import com.taskflow.task.dto.UserInfo;
 import com.taskflow.task.entity.TaskDefinition;
 import com.taskflow.task.mapper.TaskMapper;
+import com.taskflow.task.scheduler.CronTriggerCalculator;
 
 import feign.FeignException;
 import feign.RetryableException;
@@ -101,38 +102,53 @@ public class TaskService {
             throw badRequest("description is too long");
         }
 
-        // 本阶段先实现 ONCE；CRON 留到调度器课程
-        if (!"ONCE".equals(request.triggerType())) {
-            throw badRequest("Only ONCE trigger is supported now");
+        String triggerType = request.triggerType();
+        if (!"ONCE".equals(triggerType) && !"CRON".equals(triggerType)) {
+            throw badRequest("triggerType must be ONCE or CRON");
         }
-
-        if (request.cronExpression() != null
-                && !request.cronExpression().isBlank()) {
-            throw badRequest(
-                    "cronExpression must be empty for ONCE");
-        }
-
-        LocalDateTime nextTriggerAt = request.nextTriggerAt();
-
-        if (nextTriggerAt == null) {
-            throw badRequest("nextTriggerAt is required");
-        }
-
-        // 与 MySQL DATETIME(3) 毫秒精度一致
-        nextTriggerAt =
-                nextTriggerAt.truncatedTo(ChronoUnit.MILLIS);
 
         String timezone = request.timezone() == null
                 ? "UTC"
                 : requiredText(request.timezone(), 64, "timezone");
 
+        ZoneId taskZone;
         try {
-            nextTriggerAt = nextTriggerAt.atZone(ZoneId.of(timezone))
-                    .withZoneSameInstant(ZoneOffset.UTC)
-                    .toLocalDateTime();
+            taskZone = ZoneId.of(timezone);
         } catch (DateTimeException ex) {
             throw badRequest("Invalid timezone");
         }
+
+        String cronExpression = null;
+        LocalDateTime nextTriggerAt;
+        if ("CRON".equals(triggerType)) {
+            if (request.nextTriggerAt() != null) {
+                throw badRequest("nextTriggerAt must be empty for CRON");
+            }
+            cronExpression = requiredText(request.cronExpression(), 128, "cronExpression");
+
+            // 首次触发时间由服务端计算，返回值已经是数据库使用的 UTC。
+            try {
+                nextTriggerAt = CronTriggerCalculator.nextUtcAfter(
+                        cronExpression, LocalDateTime.now(ZoneOffset.UTC), taskZone);
+            } catch (IllegalArgumentException ex) {
+                throw badRequest("Invalid cronExpression: " + ex.getMessage());
+            }
+        } else {
+            if (request.cronExpression() != null && !request.cronExpression().isBlank()) {
+                throw badRequest("cronExpression must be empty for ONCE");
+            }
+            LocalDateTime requestedTime = request.nextTriggerAt();
+            if (requestedTime == null) {
+                throw badRequest("nextTriggerAt is required");
+            }
+
+            // ONCE 的请求时间按任务时区解释，再转成 UTC，并保留毫秒精度。
+            nextTriggerAt = requestedTime.atZone(taskZone)
+                    .withZoneSameInstant(ZoneOffset.UTC)
+                    .toLocalDateTime()
+                    .truncatedTo(ChronoUnit.MILLIS);
+        }
+
 
         int maxRetries = request.maxRetries() == null
                 ? 3
@@ -149,8 +165,8 @@ public class TaskService {
         task.setName(name);
         task.setDescription(description);
         task.setHandlerType(handlerType);
-        task.setTriggerType("ONCE");
-        task.setCronExpression(null);
+        task.setTriggerType(triggerType);
+        task.setCronExpression(cronExpression);
         task.setTimezone(timezone);
         task.setNextTriggerAt(nextTriggerAt);
         task.setPayload(
@@ -222,8 +238,7 @@ public class TaskService {
                                   requested.getCronExpression())
                 && Objects.equals(existing.getTimezone(),
                                   requested.getTimezone())
-                && Objects.equals(existing.getNextTriggerAt(),
-                                  requested.getNextTriggerAt())
+                && sameInitialSchedule(existing, requested)
                 && Objects.equals(existing.getMaxRetries(),
                                   requested.getMaxRetries())
                 && Objects.equals(jsonTree(existing.getPayload()),
@@ -237,6 +252,23 @@ public class TaskService {
 
         return new CreateTaskResult(existing.getId(), false);
     }
+
+    private boolean sameInitialSchedule(TaskDefinition existing, TaskDefinition requested) {
+        if ("CRON".equals(requested.getTriggerType())) {
+            // CRON 的首次触发时间由服务端生成，表达式和时区已在外层比较。
+            return true;
+        }
+
+        LocalDateTime original = existing.getNextTriggerAt();
+        if (original == null) {
+            // ONCE 已派发。实例保留了定义当初指定的 UTC 时间。
+            original = taskMapper.findDispatchedOnceScheduledAt(existing.getId());
+        }
+
+        // 找不到唯一的原始时间时，不能证明两次请求相同。
+        return original != null && original.equals(requested.getNextTriggerAt());
+    }
+
 
     private JsonNode jsonTree(String json) {
 

@@ -9,15 +9,21 @@ import java.util.List;
 
 @Mapper
 public interface TaskMapper {
-    List<TaskDefinition> selectDueOnceForUpdate(
+    LocalDateTime selectUtcNow();
+
+    List<TaskDefinition> selectDueForUpdate(
         @Param("limit") int limit
     );
 
-    int markOnceScheduled(
+    int advanceSchedule(
         @Param("id") Long id,
-        @Param("scheduledAt") LocalDateTime scheduledAt
+        @Param("triggerType") String triggerType,
+        @Param("scheduledAt") LocalDateTime scheduledAt,
+        @Param("nextTriggerAt") LocalDateTime nextTriggerAt
     );
     int insert(TaskDefinition task);
+
+    LocalDateTime findDispatchedOnceScheduledAt(@Param("definitionId") Long definitionId);
 
     TaskDefinition findById(@Param("id") Long id);
 

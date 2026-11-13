@@ -1,0 +1,54 @@
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: taskflow_task
+      MYSQL_USER: taskflow
+      MYSQL_PASSWORD: ${DAY43_MYSQL_PASSWORD:?set DAY43_MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DAY43_MYSQL_ROOT_PASSWORD:?set DAY43_MYSQL_ROOT_PASSWORD}
+    ports:
+      - "127.0.0.1:13306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./docker/day43/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      # Verify the application account and the initialized schema.
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_PASSWORD\" mysql -h 127.0.0.1 -u \"$$MYSQL_USER\" \"$$MYSQL_DATABASE\" -e 'SELECT 1 FROM task_instance LIMIT 0'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:4.2-management
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: taskflow
+      RABBITMQ_DEFAULT_PASS: ${DAY43_RABBIT_PASSWORD:?set DAY43_RABBIT_PASSWORD}
+    ports:
+      - "127.0.0.1:15673:15672"
+    volumes:
+      - rabbit-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  task:
+    image: taskflow-task:dev
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      DAY43_MYSQL_PASSWORD: ${DAY43_MYSQL_PASSWORD:?set DAY43_MYSQL_PASSWORD}
+      DAY43_RABBIT_PASSWORD: ${DAY43_RABBIT_PASSWORD:?set DAY43_RABBIT_PASSWORD}
+    ports:
+      - "127.0.0.1:18082:8082"
+    volumes:
+      - ./docker/day43/application.yml:/config/application.yml:ro
+
+volumes:
+  mysql-data:
+  rabbit-data:

@@ -21,6 +21,8 @@
     <module>taskflow-common</module>
 	<module>taskflow-user</module>
 	<module>taskflow-task</module>
+    <module>taskflow-scheduler</module>
+        <module>taskflow-gateway</module>
     </modules>
 
     <name>taskflow</name>
@@ -34,6 +36,11 @@
 
 <dependencyManagement>
     <dependencies>
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+            <version>2025.0.0.0</version>
+        </dependency>
         <dependency>
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-dependencies</artifactId>
