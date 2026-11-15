@@ -9,4 +9,16 @@
         WHERE id = #{id}
           AND status = 'ACTIVE'
     </select>
+
+    <insert id="insertActiveUser">
+        INSERT INTO sys_user (username, password_hash, status)
+        VALUES (#{username}, #{passwordHash}, 'ACTIVE')
+    </insert>
+
+    <select id="findActiveForLogin" resultType="com.taskflow.user.mapper.UserMapper$LoginUser">
+        SELECT id, password_hash AS passwordHash
+        FROM sys_user
+        WHERE username = #{username}
+          AND status = 'ACTIVE'
+    </select>
 </mapper>

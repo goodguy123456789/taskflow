@@ -25,6 +25,15 @@
 
 </select>
 
+<!-- 只查询属于当前调用者的任务。userId 由 Task 从验签后的 JWT 取得。 -->
+<select id="findByIdAndUserId"
+        resultType="com.taskflow.task.entity.TaskDefinition">
+    SELECT <include refid="taskColumns"/>
+    FROM task_definition
+    WHERE id = #{id}
+      AND user_id = #{userId}
+</select>
+
 <!-- 2. 核对本轮计划时间后推进定义，ONCE 传入 NULL -->
 <update id="advanceSchedule">
 

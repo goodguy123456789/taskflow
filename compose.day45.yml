@@ -1,0 +1,108 @@
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: taskflow_task
+      MYSQL_USER: taskflow
+      MYSQL_PASSWORD: ${DAY45_MYSQL_PASSWORD:?required}
+      MYSQL_ROOT_PASSWORD: ${DAY45_MYSQL_ROOT_PASSWORD:?required}
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./docker/day43/schema.sql:/docker-entrypoint-initdb.d/01-task.sql:ro
+      - ./docker/day45/user-schema.sql:/docker-entrypoint-initdb.d/02-user.sql:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          MYSQL_PWD="$$MYSQL_PASSWORD" mysql -h 127.0.0.1 -u "$$MYSQL_USER" "$$MYSQL_DATABASE"
+          -e 'SELECT 1 FROM task_instance LIMIT 0; SELECT 1 FROM taskflow_user.sys_user LIMIT 0'
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:4.2-management
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: taskflow
+      RABBITMQ_DEFAULT_PASS: ${DAY45_RABBIT_PASSWORD:?required}
+    volumes:
+      - rabbit-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  user:
+    image: eclipse-temurin:17-jre
+    command: ["java", "-jar", "/app/app.jar"]
+    volumes:
+      - ./taskflow-user/target/taskflow-user-0.1.0-SNAPSHOT.jar:/app/app.jar:ro
+    environment:
+      TASKFLOW_USER_DB_URL: jdbc:mysql://mysql:3306/taskflow_user
+      TASKFLOW_USER_DB_USERNAME: taskflow
+      TASKFLOW_USER_DB_PASSWORD: ${DAY45_MYSQL_PASSWORD:?required}
+      TASKFLOW_JWT_SECRET_BASE64: ${TASKFLOW_JWT_SECRET_BASE64:?required}
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  task:
+    image: eclipse-temurin:17-jre
+    command: ["java", "-jar", "/app/app.jar", "--spring.config.location=file:/config/application.yml"]
+    volumes:
+      - ./taskflow-task/target/taskflow-task-0.1.0-SNAPSHOT.jar:/app/app.jar:ro
+      - ./docker/day43/application.yml:/config/application.yml:ro
+    environment:
+      DAY43_MYSQL_PASSWORD: ${DAY45_MYSQL_PASSWORD:?required}
+      DAY43_RABBIT_PASSWORD: ${DAY45_RABBIT_PASSWORD:?required}
+      TASKFLOW_USER_SERVICE_URL: http://user:8081
+      TASKFLOW_GATEWAY_TOKEN: ${TASKFLOW_GATEWAY_TOKEN:?required}
+      TASKFLOW_SCHEDULER_INTERNAL_DISPATCH_ENABLED: "true"
+      TASKFLOW_SCHEDULER_TOKEN: ${TASKFLOW_SCHEDULER_TOKEN:?required}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      user:
+        condition: service_started
+
+  scheduler:
+    image: eclipse-temurin:17-jre
+    command: ["java", "-jar", "/app/app.jar"]
+    volumes:
+      - ./taskflow-scheduler/target/taskflow-scheduler-0.1.0-SNAPSHOT.jar:/app/app.jar:ro
+    environment:
+      TASKFLOW_REMOTE_DISPATCH_URL: http://task:8082/internal/scheduler/dispatch-due
+      TASKFLOW_SCHEDULER_TOKEN: ${TASKFLOW_SCHEDULER_TOKEN:?required}
+    depends_on:
+      task:
+        condition: service_started
+
+  gateway:
+    image: eclipse-temurin:17-jre
+    command: ["java", "-jar", "/app/app.jar"]
+    volumes:
+      - ./taskflow-gateway/target/taskflow-gateway-0.1.0-SNAPSHOT.jar:/app/app.jar:ro
+    ports:
+      - "127.0.0.1:8090:8090"
+    environment:
+      SERVER_ADDRESS: 0.0.0.0
+      TASKFLOW_JWT_SECRET_BASE64: ${TASKFLOW_JWT_SECRET_BASE64:?required}
+      TASKFLOW_GATEWAY_TOKEN: ${TASKFLOW_GATEWAY_TOKEN:?required}
+      SPRING_APPLICATION_JSON: >-
+        {"spring":{"cloud":{"gateway":{"server":{"webflux":{"routes":[
+          {"id":"taskflow-user-auth","uri":"http://user:8081","predicates":["Path=/api/users/register,/api/users/login","Method=POST"]},
+          {"id":"taskflow-task","uri":"http://task:8082","predicates":["Path=/api/tasks,/api/tasks/**"]}
+        ]}}}}}}
+    depends_on:
+      user:
+        condition: service_started
+      task:
+        condition: service_started
+
+volumes:
+  mysql-data:
+  rabbit-data:

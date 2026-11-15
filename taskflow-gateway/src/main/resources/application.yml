@@ -10,10 +10,12 @@ spring:
       server:
         webflux:
           routes:
-            - id: taskflow-user
+            - id: taskflow-user-auth
               uri: http://127.0.0.1:8081
               predicates:
-                - Path=/api/users/**
+                - Path=/api/users/register,/api/users/login
+                - Method=POST
+
             - id: taskflow-task
               uri: http://127.0.0.1:8082
               predicates:

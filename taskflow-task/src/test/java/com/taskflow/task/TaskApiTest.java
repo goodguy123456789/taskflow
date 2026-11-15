@@ -25,6 +25,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import com.taskflow.task.service.OutboxRelay;
@@ -44,6 +45,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.datasource.driver-class-name=org.h2.Driver",
         "spring.datasource.username=sa",
         "spring.datasource.password=",
+        "TASKFLOW_GATEWAY_TOKEN=task-api-test-fixture",
         "spring.rabbitmq.listener.simple.auto-startup=false",
         "taskflow.outbox.relay-enabled=false",
         "taskflow.scheduler.enabled=false",
@@ -102,7 +104,7 @@ class TaskApiTest {
 
     @Test
     void storesLocalTriggerTimeAsUtc() throws Exception {
-        api.perform(post("/api/tasks").contentType(MediaType.APPLICATION_JSON).content(validRequest()))
+        api.perform(createTaskRequest(1).contentType(MediaType.APPLICATION_JSON).content(validRequest()))
                 .andExpect(status().isCreated());
 
         java.sql.Timestamp stored = jdbc.queryForObject(
@@ -113,7 +115,7 @@ class TaskApiTest {
     @Test
     void repeatedKeyReturnsSameTaskAndOnlyOneRow() throws Exception {
         String body = validRequest();
-        MvcResult first = api.perform(post("/api/tasks").contentType(MediaType.APPLICATION_JSON).content(body))
+        MvcResult first = api.perform(createTaskRequest(1).contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.created").value(true))
@@ -123,12 +125,12 @@ class TaskApiTest {
         assertTrue(id > 0);
         assertEquals("GET /api/users/1", REQUEST_PATH.get());
 
-        api.perform(post("/api/tasks").contentType(MediaType.APPLICATION_JSON).content(body))
+        api.perform(createTaskRequest(1).contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.taskId").value(id))
                 .andExpect(jsonPath("$.data.created").value(false));
 
-        api.perform(get("/api/tasks/{id}", id))
+        api.perform(readTaskRequest(id))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.userId").value(1))
                 .andExpect(jsonPath("$.data.name").value("Daily Report"))
@@ -148,10 +150,10 @@ class TaskApiTest {
     @Test
     void sameKeyWithChangedRequestReturnsConflict() throws Exception {
         String body = validRequest();
-        api.perform(post("/api/tasks").contentType(MediaType.APPLICATION_JSON).content(body))
+        api.perform(createTaskRequest(1).contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isCreated());
         String changed = body.replace("Daily Report", "Different task");
-        api.perform(post("/api/tasks").contentType(MediaType.APPLICATION_JSON).content(changed))
+        api.perform(createTaskRequest(1).contentType(MediaType.APPLICATION_JSON).content(changed))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value(409));
         assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM task_definition", Integer.class));
@@ -159,10 +161,10 @@ class TaskApiTest {
 
     @Test
     void differentKeysCreateDifferentTasks() throws Exception {
-        api.perform(post("/api/tasks").contentType(MediaType.APPLICATION_JSON).content(validRequest()))
+        api.perform(createTaskRequest(1).contentType(MediaType.APPLICATION_JSON).content(validRequest()))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.created").value(true));
-        api.perform(post("/api/tasks").contentType(MediaType.APPLICATION_JSON).content(validRequest()))
+        api.perform(createTaskRequest(1).contentType(MediaType.APPLICATION_JSON).content(validRequest()))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.created").value(true));
         assertEquals(2, jdbc.queryForObject("SELECT COUNT(*) FROM task_definition", Integer.class));
@@ -170,7 +172,7 @@ class TaskApiTest {
 
     @Test
     void missingTaskReturnsNotFound() throws Exception {
-        api.perform(get("/api/tasks/{id}", Long.MAX_VALUE))
+        api.perform(readTaskRequest(Long.MAX_VALUE))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(404));
     }
@@ -178,7 +180,7 @@ class TaskApiTest {
     @ParameterizedTest
     @ValueSource(longs = {0, -1})
     void invalidTaskIdReturnsBadRequest(long id) throws Exception {
-        api.perform(get("/api/tasks/{id}", id))
+        api.perform(readTaskRequest(id))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(400));
     }
@@ -186,7 +188,7 @@ class TaskApiTest {
     @Test
     void preservesNotFoundStatusAndJsonBody() throws Exception {
         REPLY.set(new Reply(404, "{\"code\":404,\"message\":\"User not found\",\"data\":null}", 0));
-        api.perform(post("/api/tasks").contentType(MediaType.APPLICATION_JSON)
+        api.perform(createTaskRequest(999).contentType(MediaType.APPLICATION_JSON)
                         .content(validRequest(999)))
                 .andExpect(status().isNotFound())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
@@ -204,7 +206,7 @@ class TaskApiTest {
             "{\"userId\":1}"
     })
     void rejectsInvalidTaskBeforeCallingUserService(String request) throws Exception {
-        api.perform(post("/api/tasks").contentType(MediaType.APPLICATION_JSON).content(request))
+        api.perform(createTaskRequest(1).contentType(MediaType.APPLICATION_JSON).content(request))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(400));
         assertNull(REQUEST_PATH.get());
@@ -213,7 +215,7 @@ class TaskApiTest {
     @ParameterizedTest
     @ValueSource(strings = {"{", "", "{\"userId\":\"invalid\",\"name\":\"demo\"}"})
     void unreadableRequestUsesUnifiedErrorBody(String request) throws Exception {
-        api.perform(post("/api/tasks").contentType(MediaType.APPLICATION_JSON).content(request))
+        api.perform(createTaskRequest(1).contentType(MediaType.APPLICATION_JSON).content(request))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.code").value(400))
@@ -230,7 +232,7 @@ class TaskApiTest {
     })
     void invalidUserResponseBecomesBadGateway(String response) throws Exception {
         REPLY.set(new Reply(200, response, 0));
-        api.perform(post("/api/tasks").contentType(MediaType.APPLICATION_JSON)
+        api.perform(createTaskRequest(1).contentType(MediaType.APPLICATION_JSON)
                         .content(validRequest()))
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.code").value(502));
@@ -239,7 +241,7 @@ class TaskApiTest {
     @Test
     void upstreamServerFailureBecomesBadGateway() throws Exception {
         REPLY.set(new Reply(500, "{\"code\":500,\"message\":\"failure\",\"data\":null}", 0));
-        api.perform(post("/api/tasks").contentType(MediaType.APPLICATION_JSON)
+        api.perform(createTaskRequest(1).contentType(MediaType.APPLICATION_JSON)
                         .content(validRequest()))
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.code").value(502));
@@ -248,11 +250,27 @@ class TaskApiTest {
     @Test
     void configuredReadTimeoutBecomesServiceUnavailable() throws Exception {
         REPLY.set(new Reply(200, "{\"code\":200,\"message\":\"success\",\"data\":null}", 4500));
-        api.perform(post("/api/tasks").contentType(MediaType.APPLICATION_JSON)
+        api.perform(createTaskRequest(1).contentType(MediaType.APPLICATION_JSON)
                         .content(validRequest()))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.code").value(503));
     }
+
+    // Simulate the two internal headers injected by Gateway.
+    private static MockHttpServletRequestBuilder createTaskRequest(long userId) {
+        return withGatewayIdentity(post("/api/tasks"), userId);
+    }
+
+    private static MockHttpServletRequestBuilder readTaskRequest(long taskId) {
+        return withGatewayIdentity(get("/api/tasks/{id}", taskId), 1);
+    }
+
+    private static MockHttpServletRequestBuilder withGatewayIdentity(
+            MockHttpServletRequestBuilder request, long userId) {
+        return request.header("X-Taskflow-Gateway-Token", "task-api-test-fixture")
+                .header("X-Taskflow-User-Id", Long.toString(userId));
+    }
+
 
     private String validRequest() {
         return validRequest(1);

@@ -1,10 +1,15 @@
 package com.taskflow.user.mapper;
 
 import com.taskflow.user.dto.UserInfo;
-import org.apache.ibatis.annotations.Mapper;
-import org.apache.ibatis.annotations.Param;
 
-@Mapper
 public interface UserMapper {
-    UserInfo findActiveById(@Param("id") Long id);
+
+    UserInfo findActiveById(Long id);
+
+    int insertActiveUser(String username, String passwordHash);
+
+    LoginUser findActiveForLogin(String username);
+
+    record LoginUser(Long id, String passwordHash) {
+    }
 }

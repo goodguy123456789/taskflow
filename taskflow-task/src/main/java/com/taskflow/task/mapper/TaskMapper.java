@@ -31,4 +31,9 @@ public interface TaskMapper {
             @Param("userId") Long userId,
             @Param("key") String key
     );
+
+    TaskDefinition findByIdAndUserId(
+        @Param("id") Long id,
+        @Param("userId") Long userId
+);
 }

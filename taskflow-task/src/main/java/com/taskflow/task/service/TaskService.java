@@ -42,16 +42,13 @@ public class TaskService {
     private final ObjectMapper objectMapper;
 
     // 不加 @Transactional：远程调用在事务外
-    public CreateTaskResult createTask(CreateTaskRequest request) {
+    public CreateTaskResult createTask(CreateTaskRequest request, long userId) {
 
-        TaskDefinition task = buildTask(request);
-
+        TaskDefinition task = buildTask(request, userId);
         // 1. 同一用户、同一 key，先查询是否已创建
-        TaskDefinition existing =
-                taskMapper.findByUserAndIdempotencyKey(
-                        task.getUserId(),
-                        task.getIdempotencyKey()
-                );
+        TaskDefinition existing = taskMapper.findByUserAndIdempotencyKey(
+                task.getUserId(),
+                task.getIdempotencyKey());
 
         if (existing != null) {
             return resolveDuplicate(existing, task);
@@ -68,11 +65,9 @@ public class TaskService {
         } catch (DuplicateKeyException ex) {
 
             // 失败事务已经退出，再读取并发请求创建的记录
-            TaskDefinition saved =
-                    taskMapper.findByUserAndIdempotencyKey(
-                            task.getUserId(),
-                            task.getIdempotencyKey()
-                    );
+            TaskDefinition saved = taskMapper.findByUserAndIdempotencyKey(
+                    task.getUserId(),
+                    task.getIdempotencyKey());
 
             if (saved == null) {
                 throw ex;
@@ -82,12 +77,10 @@ public class TaskService {
         }
     }
 
-    private TaskDefinition buildTask(CreateTaskRequest request) {
+    private TaskDefinition buildTask(CreateTaskRequest request, long userId) {
 
-        if (request == null
-                || request.userId() == null
-                || request.userId() <= 0) {
-            throw badRequest("Invalid user ID");
+        if (request == null) {
+            throw badRequest("Invalid request body");
         }
 
         String name = requiredText(
@@ -149,7 +142,6 @@ public class TaskService {
                     .truncatedTo(ChronoUnit.MILLIS);
         }
 
-
         int maxRetries = request.maxRetries() == null
                 ? 3
                 : request.maxRetries();
@@ -161,7 +153,7 @@ public class TaskService {
         String key = normalizeKey(request.idempotencyKey());
 
         TaskDefinition task = new TaskDefinition();
-        task.setUserId(request.userId());
+        task.setUserId(userId);
         task.setName(name);
         task.setDescription(description);
         task.setHandlerType(handlerType);
@@ -172,8 +164,7 @@ public class TaskService {
         task.setPayload(
                 request.payload() == null
                         ? null
-                        : request.payload().toString()
-        );
+                        : request.payload().toString());
         task.setMaxRetries(maxRetries);
         task.setStatus("ENABLED");
         task.setIdempotencyKey(key);
@@ -223,26 +214,25 @@ public class TaskService {
             TaskDefinition existing,
             TaskDefinition requested) {
 
-        boolean sameRequest =
-                Objects.equals(existing.getUserId(),
-                               requested.getUserId())
+        boolean sameRequest = Objects.equals(existing.getUserId(),
+                requested.getUserId())
                 && Objects.equals(existing.getName(),
-                                  requested.getName())
+                        requested.getName())
                 && Objects.equals(existing.getDescription(),
-                                  requested.getDescription())
+                        requested.getDescription())
                 && Objects.equals(existing.getHandlerType(),
-                                  requested.getHandlerType())
+                        requested.getHandlerType())
                 && Objects.equals(existing.getTriggerType(),
-                                  requested.getTriggerType())
+                        requested.getTriggerType())
                 && Objects.equals(existing.getCronExpression(),
-                                  requested.getCronExpression())
+                        requested.getCronExpression())
                 && Objects.equals(existing.getTimezone(),
-                                  requested.getTimezone())
+                        requested.getTimezone())
                 && sameInitialSchedule(existing, requested)
                 && Objects.equals(existing.getMaxRetries(),
-                                  requested.getMaxRetries())
+                        requested.getMaxRetries())
                 && Objects.equals(jsonTree(existing.getPayload()),
-                                  jsonTree(requested.getPayload()));
+                        jsonTree(requested.getPayload()));
 
         if (!sameRequest) {
             throw new ResponseStatusException(
@@ -268,7 +258,6 @@ public class TaskService {
         // 找不到唯一的原始时间时，不能证明两次请求相同。
         return original != null && original.equals(requested.getNextTriggerAt());
     }
-
 
     private JsonNode jsonTree(String json) {
 
@@ -321,19 +310,16 @@ public class TaskService {
     }
 
     @Transactional(readOnly = true)
-    public TaskDefinition getTask(Long id) {
-
+    public TaskDefinition getTask(Long id, long userId) {
         if (id == null || id <= 0) {
             throw badRequest("Invalid task ID");
         }
 
-        TaskDefinition task = taskMapper.findById(id);
-
+        // SQL 同时按任务 ID 和所有者 ID 查询。
+        TaskDefinition task = taskMapper.findByIdAndUserId(id, userId);
         if (task == null) {
-            throw new ResponseStatusException(
-                    HttpStatus.NOT_FOUND, "Task not found");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Task not found");
         }
-
         return task;
     }
 }
